@@ -1,0 +1,223 @@
+@import "tailwindcss";
+@import "../tokens.css";
+
+html,
+body {
+  overflow-x: clip;
+}
+
+body {
+  min-height: 100dvh;
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  background-image:
+    linear-gradient(180deg, oklch(17% 0.014 72 / 0.5), transparent 120px),
+    var(--grain);
+  background-size: auto, 180px 180px;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.label {
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.bezel {
+  position: relative;
+  background: linear-gradient(180deg, var(--color-paper-2), var(--color-paper) 38%);
+  border: var(--bezel);
+  box-shadow:
+    inset 0 1px 0 oklch(40% 0.02 72 / 0.35),
+    inset 0 -1px 0 oklch(8% 0.01 72 / 0.6);
+}
+
+.bezel::before,
+.bezel::after {
+  content: "";
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border: 1px solid var(--color-rule);
+  background: var(--color-paper-3);
+  border-radius: 50%;
+  z-index: 1;
+}
+
+.bezel::before {
+  top: 5px;
+  left: 5px;
+}
+
+.bezel::after {
+  top: 5px;
+  right: 5px;
+}
+
+.bezel-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--color-rule);
+  background: oklch(12% 0.012 72 / 0.55);
+}
+
+.latch {
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-2);
+  background: var(--color-paper-3);
+  border: 1px solid var(--color-rule);
+  min-height: 2.25rem;
+  padding: 0 var(--space-sm);
+  cursor: pointer;
+  transition:
+    background var(--dur-micro) var(--ease-in-out),
+    color var(--dur-micro) var(--ease-in-out),
+    transform var(--dur-micro) var(--ease-in-out);
+}
+
+.latch:hover {
+  color: var(--color-ink);
+  background: oklch(28% 0.018 72);
+}
+
+.latch:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 0 oklch(8% 0.01 72 / 0.5);
+}
+
+.latch[aria-pressed="true"],
+.latch.is-on {
+  color: var(--color-accent-ink);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.latch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pad-key {
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-ink);
+  background: var(--color-paper-3);
+  border: 1px solid var(--color-rule);
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  cursor: pointer;
+}
+
+.pad-key:hover {
+  border-color: var(--color-ink-2);
+}
+
+.pad-key:active,
+.pad-key.is-on {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  border-color: var(--color-accent);
+}
+
+.pad-key:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.range {
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-rule) 0 1px,
+    transparent 1px 8px
+  );
+  background-color: var(--color-paper-3);
+  border: 1px solid var(--color-rule);
+}
+
+.range::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 18px;
+  background: var(--color-accent);
+  border: 1px solid var(--color-accent-ink);
+  cursor: pointer;
+}
+
+.tick-strip {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-rule) 0 1px,
+    transparent 1px 6px
+  );
+  height: 8px;
+}
+
+@keyframes ticker {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.ticker-track {
+  display: flex;
+  width: max-content;
+  animation: ticker 48s linear infinite;
+}
+
+.ticker-track:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track {
+    animation: none;
+  }
+}

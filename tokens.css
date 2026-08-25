@@ -1,0 +1,80 @@
+/* Hallmark · macrostructure: Workbench · N7 Brutal slab knobs: weight=heavy, tracking=wide, cta=none
+ * footer: Ft2 inline-rule · F3 tabular spec-sheet knobs: columns=3, rule=every-row, numbers=tabular
+ * theme: custom · vibe: "machined steel, amber signal, field ops"
+ * paper: oklch(15% 0.012 72) · accent: oklch(72% 0.14 72)
+ * display: Barlow Condensed · body: Barlow Condensed · outlier: IBM Plex Mono
+ * axes: dark / display-condensed-bold / warm
+ * studied: no · context: explicit (CIL MIN instrument console) · v1.1.0
+ * Hallmark · pre-emit critique: P5 H5 E4 S5 R4 V4
+ */
+
+:root {
+  --color-paper: oklch(15% 0.012 72);
+  --color-paper-2: oklch(19% 0.014 72);
+  --color-paper-3: oklch(24% 0.016 72);
+  --color-ink: oklch(92% 0.018 85);
+  --color-ink-2: oklch(72% 0.016 75);
+  --color-muted: oklch(58% 0.014 72);
+  --color-rule: oklch(32% 0.014 72);
+  --color-rule-2: oklch(28% 0.012 72);
+  --color-neutral: oklch(48% 0.014 72);
+  --color-accent: oklch(72% 0.14 72);
+  --color-accent-ink: oklch(18% 0.02 72);
+  --color-focus: oklch(74% 0.18 72);
+  --color-nominal: oklch(68% 0.11 125);
+  --color-caution: oklch(74% 0.14 72);
+  --color-hazard: oklch(62% 0.18 32);
+  --color-info: oklch(70% 0.08 230);
+
+  --font-display: var(--font-barlow), "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: var(--font-barlow), "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-mono: var(--font-plex), "IBM Plex Mono", ui-monospace, monospace;
+
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5625rem;
+  --text-2xl: 1.953rem;
+  --text-3xl: 2.441rem;
+
+  --space-3xs: 0.125rem;
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+
+  --radius-none: 0;
+  --radius-hair: 1px;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 420ms;
+
+  --z-base: 0;
+  --z-panel: 1;
+  --z-overlay: 2;
+  --z-header: 4;
+  --z-ticker: 5;
+  --z-focus: 6;
+
+  --page-gutter: var(--space-md);
+  --bezel: 2px solid var(--color-rule);
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
