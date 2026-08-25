@@ -31,7 +31,7 @@ const logs: SysLogEntry[] = [
 
 const alerts: AlertEntry[] = [];
 
-let state: TelemetryFrame = {
+const state: TelemetryFrame = {
   seq: 0,
   receivedAt: iso(),
   mission: {
