@@ -7,9 +7,10 @@ import { useView } from "@/components/shell/view-context";
 import { useTelemetryContext } from "@/lib/telemetry/telemetry-context";
 
 export function RobotHealth() {
-  const { frame, link } = useTelemetryContext();
+  const { frame, link, sendCommand } = useTelemetryContext();
   const { view, setView } = useView();
   const mb = frame?.thermal.mainboard;
+  const estopActive = frame?.control.estopActive ?? false;
 
   return (
     <aside className="flex min-w-0 flex-col gap-[var(--space-sm)]">
@@ -57,6 +58,33 @@ export function RobotHealth() {
         <p className="num mt-[var(--space-2xs)] text-[length:var(--text-xs)] text-[var(--color-ink-2)]">
           Session {frame ? formatElapsed(frame.mission.elapsedSec) : "—"}
         </p>
+      </Bezel>
+      <Bezel title="Safety system" className={estopActive ? "border-[var(--color-hazard)]" : ""}>
+        {estopActive ? (
+          <div className="flex flex-col gap-[var(--space-xs)]">
+            <p className="num text-[length:var(--text-xs)] text-[var(--color-hazard)] uppercase tracking-wider text-center animate-pulse m-0 font-bold">
+              ⚠️ ESTOP TRIGGERED
+            </p>
+            <button
+              type="button"
+              className="w-full latch"
+              style={{ background: "var(--color-nominal)", color: "var(--color-accent-ink)", border: "none" }}
+              disabled={link !== "online"}
+              onClick={() => sendCommand({ type: "reset_estop" })}
+            >
+              RESET E-STOP
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="w-full py-2 bg-[var(--color-hazard)] text-[var(--color-accent-ink)] hover:bg-red-800 font-bold tracking-wider text-xs border border-red-700 uppercase cursor-pointer transition-colors duration-200"
+            disabled={link !== "online"}
+            onClick={() => sendCommand({ type: "estop" })}
+          >
+            🛑 EMERGENCY STOP
+          </button>
+        )}
       </Bezel>
       <nav className="grid grid-cols-2" aria-label="Console views">
         <button type="button" className="latch" aria-pressed={view === "dashboard"} onClick={() => setView("dashboard")}>
