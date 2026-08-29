@@ -85,6 +85,7 @@ const state: TelemetryFrame = {
     driveDir: "stop",
     walkDir: "stop",
     gimbal: { pitch: 0, yaw: 0 },
+    estopActive: false,
   },
   cameras: {
     rgb: { recording: true, fps: 30, resolution: "1080p", streamUrl: "" },
@@ -146,6 +147,17 @@ function applyCommand(cmd: ControlCommand) {
     case "mission_note":
       pushLog("SYS", `NOTE ${cmd.text.slice(0, 80)}`);
       break;
+    case "estop":
+      state.control.estopActive = true;
+      state.control.driveDir = "stop";
+      state.control.walkDir = "stop";
+      state.motion.speedMps = 0;
+      pushLog("SYS", "EMERGENCY STOP TRIGGERED - MOTION HALTED");
+      break;
+    case "reset_estop":
+      state.control.estopActive = false;
+      pushLog("SYS", "EMERGENCY STOP RESET - SYSTEM STANDBY");
+      break;
   }
 }
 
@@ -153,12 +165,22 @@ function tick() {
   state.seq += 1;
   state.receivedAt = iso();
   state.mission.elapsedSec += 1;
+  
+  // Motion is disabled if estop is active or direction is stopped
   const moving =
-    state.control.driveDir !== "stop" || state.control.walkDir !== "stop";
+    !state.control.estopActive &&
+    ((state.control.mode === "drive" && state.control.driveDir !== "stop") ||
+      (state.control.mode === "walk" && state.control.walkDir !== "stop"));
+      
   const gear = state.control.speed === "fast" ? 1.6 : state.control.speed === "med" ? 1.1 : 0.45;
   state.motion.speedMps = moving
     ? walk(gear, gear * 0.8, gear * 1.15, 0.08)
     : walk(0.05, 0, 0.12, 0.04);
+    
+  if (state.control.estopActive) {
+    state.motion.speedMps = 0;
+  }
+  
   if (moving) {
     state.mission.distanceM += state.motion.speedMps;
     state.mission.tunnelProgressPct = clamp(
@@ -279,16 +301,65 @@ const sockets = new Set<WebSocket>();
 wss.on("connection", (socket) => {
   sockets.add(socket);
   console.log(`[mock-telemetry] client connected (${sockets.size})`);
+  
+  // Send initial frame
   socket.send(JSON.stringify({ type: "frame", frame: state }));
 
   socket.on("message", (buf) => {
     try {
-      const msg = JSON.parse(String(buf)) as { type?: string; command?: ControlCommand };
-      if (msg.type === "command" && msg.command) {
-        applyCommand(msg.command);
-        const ack = { type: "ack", ok: true as const, command: msg.command, at: iso() };
+      const msg = JSON.parse(String(buf)) as {
+        type: string;
+        commandId: string;
+        timestamp: string;
+        command?: ControlCommand;
+      };
+
+      if (msg.type === "ping" && msg.commandId) {
+        // Send Pong back
+        const pong = {
+          type: "pong",
+          commandId: msg.commandId,
+          timestamp: msg.timestamp,
+          at: iso(),
+        };
+        socket.send(JSON.stringify(pong));
+        return;
+      }
+
+      if (msg.type === "command" && msg.commandId && msg.command) {
+        const cmd = msg.command;
+        const isEstop = cmd.type === "estop" || cmd.type === "reset_estop";
+
+        // Simulated rejection criteria (3% random failure or note containing "fail"/"reject")
+        const shouldFail =
+          !isEstop &&
+          (Math.random() < 0.03 ||
+            (cmd.type === "mission_note" &&
+              (cmd.text.toLowerCase().includes("fail") || cmd.text.toLowerCase().includes("reject"))));
+
+        if (shouldFail) {
+          const ack = {
+            type: "ack",
+            commandId: msg.commandId,
+            ok: false,
+            error: "SIMULATED_TRANSMISSION_ERROR",
+            at: iso(),
+          };
+          socket.send(JSON.stringify(ack));
+          console.log(`[mock-telemetry] command REJECTED: ${msg.commandId}`);
+          return;
+        }
+
+        applyCommand(cmd);
+        
+        const ack = {
+          type: "ack",
+          commandId: msg.commandId,
+          ok: true,
+          at: iso(),
+        };
         socket.send(JSON.stringify(ack));
-        console.log("[mock-telemetry] command", msg.command);
+        console.log(`[mock-telemetry] command ACKed: ${msg.commandId} (${cmd.type})`);
       }
     } catch (err) {
       console.error("[mock-telemetry] bad inbound", err);
@@ -303,6 +374,31 @@ wss.on("connection", (socket) => {
 
 setInterval(() => {
   tick();
+  
+  // Periodically emit asynchronous device logs/faults (15% chance per tick)
+  if (Math.random() < 0.15 && sockets.size > 0) {
+    const logTypes: Array<{ severity: "info" | "caution" | "hazard"; source: string; message: string }> = [
+      { severity: "caution", source: "PWR", message: "BATTERY_TEMPERATURE_ELEVATED" },
+      { severity: "info", source: "SYS", message: "AUTONOMOUS_TUNNEL_MAPPING_CALIBRATED" },
+      { severity: "caution", source: "GAS", message: "CO_LEVELS_TEMPORARILY_PEAKING" },
+      { severity: "hazard", source: "LDR", message: "LIDAR_SENSORS_DIRT_COATING_DETECTED" },
+      { severity: "info", source: "COM", message: "ROUTER_SIGNAL_OPTIMIZED" },
+    ];
+    const choice = logTypes[Math.floor(Math.random() * logTypes.length)];
+    const deviceLog = {
+      type: "log",
+      ts: clock(),
+      severity: choice.severity,
+      source: choice.source,
+      message: choice.message,
+    };
+    const payload = JSON.stringify(deviceLog);
+    for (const s of sockets) {
+      if (s.readyState === s.OPEN) s.send(payload);
+    }
+  }
+
+  // Periodic Telemetry Frames broadcast
   const payload = JSON.stringify({ type: "frame", frame: state });
   for (const s of sockets) {
     if (s.readyState === s.OPEN) s.send(payload);
