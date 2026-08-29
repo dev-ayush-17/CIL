@@ -7,16 +7,20 @@ import { useTelemetryContext } from "@/lib/telemetry/telemetry-context";
 export function OperatorNotes() {
   const { sendCommand, lastAck, link } = useTelemetryContext();
   const [text, setText] = useState("");
+  const [lastNoteId, setLastNoteId] = useState<string | null>(null);
+
+  const isAcked = lastAck && lastNoteId && lastAck.commandId === lastNoteId && lastAck.ok;
 
   return (
-    <Bezel title="Operator note" stamp={lastAck?.command.type === "mission_note" ? "ACK" : undefined}>
+    <Bezel title="Operator note" stamp={isAcked ? "ACK" : undefined}>
       <form
         className="flex flex-col gap-[var(--space-xs)] sm:flex-row"
         onSubmit={(e) => {
           e.preventDefault();
           const next = text.trim();
           if (!next) return;
-          sendCommand({ type: "mission_note", text: next });
+          const id = sendCommand({ type: "mission_note", text: next });
+          setLastNoteId(id);
           setText("");
         }}
       >
