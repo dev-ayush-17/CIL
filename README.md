@@ -150,12 +150,14 @@ export function mapInboundPayload(raw: any): TelemetryFrame {
 }
 ```
 
-### Step C: Receiving Commands on the ESP32
-When an operator interacts with console controls (modes, lighting presets, directional keys, notes), the React client transmits control commands over the WebSocket connection in the following shape:
+### Step C: Outbound Commands Format (Dashboard → ESP32)
+When an operator interacts with console controls (modes, lighting presets, directional keys, notes), the React client transmits commands over the WebSocket connection wrapped in a command envelope:
 
 ```json
 {
   "type": "command",
+  "commandId": "abc123xyz",
+  "timestamp": "2026-08-29T18:00:00.000Z",
   "command": {
     "type": "set_lights",
     "intensity": "high"
@@ -163,4 +165,51 @@ When an operator interacts with console controls (modes, lighting presets, direc
 }
 ```
 
-Ensure your ESP32's WebSocket server parses incoming text frames, checks for the `"command"` type, and triggers the hardware actuators accordingly.
+Your ESP32 firmware should parse this JSON payload, trigger the hardware actuators, and respond back immediately with an acknowledgment (`ack`) package using the same `commandId` to confirm the action took effect:
+
+```json
+{
+  "type": "ack",
+  "commandId": "abc123xyz",
+  "ok": true,
+  "at": "2026-08-29T18:00:00.120Z"
+}
+```
+
+Detailed payloads and types are documented in the [WebSocket Wire Protocol Spec](docs/ws-protocol.md) and demonstrated in the [ESP32 Reference Sketch](docs/esp32-reference/firmware.ino).
+
+---
+
+## 4. Console Verification & Testing Instructions
+
+To test and verify the Phase 2 bidirectional link features locally, run the Next.js console alongside the stateful mock server:
+
+### A. Testing Pointer-Held Controls
+- Navigate to the **Robot Control** panel.
+- Click and hold Fwd/Back/Left/Right on the **Drive Control** or **Walk Control** D-Pads.
+- Observe the telemetry terminal output (or command logs). The dashboard will continuously dispatch throttled movement packages (every 200ms) while held down.
+- Release the mouse/pointer or drag the cursor out of the button boundaries: verify that an explicit `"stop"` command is immediately dispatched.
+
+### B. Testing Slider Throttling
+- Click and drag the **Posture** (Tilt/Roll or Height) sliders.
+- The UI handles the drag smoothly in local state and throttles outgoing WebSocket frames to a 150ms interval to prevent buffer overflow on the hardware side.
+- Upon release, the final precise coordinate is immediately sent over the wire.
+
+### C. Testing Emergency Stop (E-STOP)
+- The E-STOP safety control is located inside the **Safety System** module on the left side (always visible regardless of the current active view).
+- Click **EMERGENCY STOP**:
+  - The E-STOP command immediately bypasses the normal command queue and sends the `{ type: "estop" }` command.
+  - Telemetry speed variables immediately drop to `0.00 M/S` and walk/drive D-pads display a locked, halted state.
+- Press **RESET E-STOP** to re-enable operations.
+
+### D. Testing Connection Lifecycles & Stale Link Indicators
+- Terminate the mock server terminal (`Ctrl+C`). 
+- Watch the **UTC Status Lamp** in the top header: it will transition to `Connecting` and then `Offline`. All controls are automatically disabled to prevent dead commands.
+- Restart the mock server: the link will automatically reconnect with backoff.
+- The heartbeat sends pings every 3s. If the mock server stops replying but the socket remains open, the status lamp transitions to a flashing `Stale Link` warning after 8s.
+
+### E. Testing Optimistic UI & Rejection Paths
+- The mock server is configured to simulate random packet transmission failures ~3% of the time.
+- To trigger a deterministic failure: navigate to **Operator Note**, type `"fail"` or `"reject"` (e.g., `"fail sensor scan"`), and click **Stamp Log**.
+- The mock server will return `ok: false` with a simulated error.
+- Verify that the Bezel header displays a flashing `WAITING FOR ACK ⚠️` or `UNCONFIRMED ⚠️` warning frame, demonstrating the reconciliation handler.
