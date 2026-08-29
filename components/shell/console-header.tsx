@@ -13,7 +13,27 @@ export function ConsoleHeader() {
     return () => clearInterval(id);
   }, []);
 
-  const online = link === "online" && frame?.mission.robotOnline;
+  const getStatusToneAndLabel = (): { tone: "nominal" | "caution" | "hazard" | "muted"; label: string } => {
+    switch (link) {
+      case "online":
+        if (frame?.mission.robotOnline) {
+          return { tone: "nominal", label: "Online" };
+        }
+        return { tone: "caution", label: "Standby" };
+      case "connecting":
+        return { tone: "caution", label: "Connecting" };
+      case "reconnecting":
+        return { tone: "caution", label: "Reconnecting" };
+      case "stale":
+        return { tone: "hazard", label: "Stale Link" };
+      case "offline":
+      default:
+        return { tone: "hazard", label: "Offline" };
+    }
+  };
+
+  const status = getStatusToneAndLabel();
+  const isStale = link === "stale";
   const utc = clock.toISOString().slice(11, 19);
 
   return (
@@ -34,10 +54,9 @@ export function ConsoleHeader() {
         </p>
       </div>
       <div className="flex min-w-0 flex-wrap items-end justify-start gap-x-[var(--space-lg)] gap-y-[var(--space-xs)] md:justify-end">
-        <StatusLamp
-          tone={online ? "nominal" : link === "connecting" ? "caution" : "hazard"}
-          label={online ? "Online" : link === "connecting" ? "Linking" : "Offline"}
-        />
+        <div className={isStale ? "animate-pulse" : ""}>
+          <StatusLamp tone={status.tone} label={status.label} />
+        </div>
         <div>
           <p className="label m-0">Bat</p>
           <p className="num m-0 text-[length:var(--text-md)]">{frame ? `${frame.link.batteryPct.toFixed(0)}%` : "—"}</p>

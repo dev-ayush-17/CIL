@@ -107,6 +107,7 @@ export interface TelemetryFrame {
     driveDir: "stop" | "fwd" | "back" | "left" | "right";
     walkDir: "stop" | "fwd" | "back" | "left" | "right";
     gimbal: { pitch: number; yaw: number };
+    estopActive: boolean;
   };
   cameras: {
     rgb: CameraMeta;
@@ -126,21 +127,24 @@ export type ControlCommand =
   | { type: "set_lights"; intensity: LightLevel }
   | { type: "gimbal"; dir: "up" | "down" | "left" | "right" | "center" }
   | { type: "set_vision"; mode: VisionMode }
-  | { type: "mission_note"; text: string };
+  | { type: "mission_note"; text: string }
+  | { type: "estop" }
+  | { type: "reset_estop" };
 
 export interface ControlAck {
-  ok: true;
   type: "ack";
-  command: ControlCommand;
+  commandId: string;
+  ok: boolean;
+  error?: string;
   at: string;
 }
 
-export interface WsInbound {
-  type: "frame";
-  frame: TelemetryFrame;
-}
+export type WsInbound =
+  | { type: "frame"; frame: TelemetryFrame }
+  | ControlAck
+  | { type: "pong"; commandId: string; timestamp: string; at: string }
+  | { type: "log"; ts: string; severity: AlertSeverity; source: SysLogLevel; message: string };
 
-export interface WsOutbound {
-  type: "command";
-  command: ControlCommand;
-}
+export type WsOutbound =
+  | { type: "command"; commandId: string; timestamp: string; command: ControlCommand }
+  | { type: "ping"; commandId: string; timestamp: string };
