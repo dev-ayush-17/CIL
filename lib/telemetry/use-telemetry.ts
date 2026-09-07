@@ -27,7 +27,14 @@ export function useTelemetry() {
 
   const sendCommand = useCallback((command: ControlCommand) => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return null;
+    
+    console.log("🔥 sendCommand called with:", command);
+    console.log("🔥 current ws object:", ws, "readyState:", ws?.readyState);
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.error("❌ sendCommand aborted. WebSocket is null or not OPEN!");
+      return null;
+    }
     
     const commandId = generateId();
     const timestamp = new Date().toISOString();
@@ -39,6 +46,7 @@ export function useTelemetry() {
       command,
     };
 
+    console.log("🔥 SENDING COMMAND FROM BROWSER:", envelope);
     ws.send(JSON.stringify(envelope));
     
     setPendingCommands((prev) => ({
@@ -200,8 +208,14 @@ export function useTelemetry() {
       };
 
       ws.onclose = () => {
-        setLink("offline");
-        wsRef.current = null;
+        // Fix: React StrictMode fires unmount immediately. 
+        // If an old socket's onclose fires *after* a new socket is created, 
+        // it shouldn't be allowed to nullify the new socket's ref.
+        if (wsRef.current === ws) {
+          setLink("offline");
+          wsRef.current = null;
+        }
+        
         if (pingInterval) clearInterval(pingInterval);
         if (staleChecker) clearInterval(staleChecker);
         

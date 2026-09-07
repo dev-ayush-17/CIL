@@ -80,7 +80,11 @@ export function RobotHealth() {
             type="button"
             className="w-full py-2 bg-[var(--color-hazard)] text-[var(--color-accent-ink)] hover:bg-red-800 font-bold tracking-wider text-xs border border-red-700 uppercase cursor-pointer transition-colors duration-200"
             disabled={link !== "online"}
-            onClick={() => sendCommand({ type: "estop" })}
+            onClick={() => {
+              console.log("👉 UI BUTTON WAS CLICKED!");
+              console.log("Current Link State:", link);
+              sendCommand({ type: "estop" });
+            }}
           >
             🛑 EMERGENCY STOP
           </button>
