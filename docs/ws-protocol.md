@@ -83,8 +83,10 @@ Emitted by the ESP32 periodically (e.g. every 1 second). Represents the active s
     },
     "gas": {
       "coPpm": 3.8,
+      "coStatus": "ok",
       "coStats": { "currentC": 3.8, "minC": 2, "maxC": 8, "avgC": 3.6 },
       "ch4Ppm": 0.04,
+      "ch4Status": "ok",
       "ch4Warn": false,
       "ch4Crit": false,
       "ch4WarnThresholdPpm": 5.0,

@@ -34,6 +34,7 @@ const alerts: AlertEntry[] = [];
 const state: TelemetryFrame = {
   seq: 0,
   receivedAt: iso(),
+  pose: null,
   mission: {
     id: "DELTA-4",
     phase: "survey",
@@ -64,8 +65,10 @@ const state: TelemetryFrame = {
   },
   gas: {
     coPpm: 4,
+    coStatus: "ok",
     coStats: { currentC: 4, minC: 2, maxC: 6, avgC: 3.8 },
     ch4Ppm: 0.02,
+    ch4Status: "ok",
     ch4Warn: false,
     ch4Crit: false,
     ch4WarnThresholdPpm: 5,

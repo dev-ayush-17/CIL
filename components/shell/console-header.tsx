@@ -59,15 +59,21 @@ export function ConsoleHeader() {
         </div>
         <div>
           <p className="label m-0">Bat</p>
-          <p className="num m-0 text-[length:var(--text-md)]">{frame ? `${frame.link.batteryPct.toFixed(0)}%` : "—"}</p>
+          <p className="num m-0 text-[length:var(--text-md)]">
+            {frame?.link?.batteryPct != null ? `${frame.link.batteryPct.toFixed(0)}%` : "—"}
+          </p>
         </div>
         <div>
           <p className="label m-0">Sig</p>
-          <p className="num m-0 text-[length:var(--text-md)]">{frame ? `${frame.link.signalPct.toFixed(0)}%` : "—"}</p>
+          <p className="num m-0 text-[length:var(--text-md)]">
+            {frame?.link?.signalPct != null ? `${frame.link.signalPct.toFixed(0)}%` : "—"}
+          </p>
         </div>
         <div>
           <p className="label m-0">UTC</p>
-          <p className="num m-0 text-[length:var(--text-md)] text-[var(--color-accent)]">{utc}</p>
+          <p className="num m-0 text-[length:var(--text-md)] text-[var(--color-accent)]" suppressHydrationWarning>
+            {utc}
+          </p>
         </div>
       </div>
     </header>

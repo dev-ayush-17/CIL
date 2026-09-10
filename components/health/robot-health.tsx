@@ -9,15 +9,15 @@ import { useTelemetryContext } from "@/lib/telemetry/telemetry-context";
 export function RobotHealth() {
   const { frame, link, sendCommand } = useTelemetryContext();
   const { view, setView } = useView();
-  const mb = frame?.thermal.mainboard;
-  const estopActive = frame?.control.estopActive ?? false;
+  const mb = frame?.thermal?.mainboard;
+  const estopActive = frame?.control?.estopActive ?? false;
 
   return (
     <aside className="flex min-w-0 flex-col gap-[var(--space-sm)]">
       <Bezel title="Robot health" stamp={link === "online" ? "LIVE" : "HOLD"}>
-        <RadialGauge value={frame?.power.mainPct ?? 0} label="Pwr lvl" />
+        <RadialGauge value={frame?.power?.mainPct ?? 0} label="Pwr lvl" />
         <p className="num mt-[var(--space-2xs)] text-center text-[length:var(--text-xs)] text-[var(--color-ink-2)]">
-          {frame ? `${frame.power.voltageV.toFixed(1)} V  ·  ${frame.power.currentA.toFixed(1)} A` : "—"}
+          {frame?.power ? `${frame.power.voltageV.toFixed(1)} V  ·  ${frame.power.currentA.toFixed(1)} A` : "—"}
         </p>
         <div className="mt-[var(--space-md)] border-t border-[var(--color-rule)] pt-[var(--space-sm)]">
           <p className="label m-0">Mb temp</p>
@@ -31,32 +31,34 @@ export function RobotHealth() {
         <div className="mt-[var(--space-sm)] flex items-center justify-between gap-[var(--space-sm)]">
           <div>
             <p className="label m-0">Link s/n</p>
-            <p className="num m-0">{frame ? `${frame.link.snrDbm.toFixed(0)} dBm` : "—"}</p>
+            <p className="num m-0">{frame?.link ? `${frame.link.snrDbm.toFixed(0)} dBm` : "—"}</p>
           </div>
-          <SignalBars level={frame?.link.signalPct ?? 0} />
+          <SignalBars level={frame?.link?.signalPct ?? 0} />
         </div>
         <div className="mt-[var(--space-sm)]">
           <p className="label m-0">Nodes dropped</p>
           <p className="num m-0 text-[length:var(--text-lg)]">
-            {frame ? `${frame.link.nodesDropped}/${frame.link.nodesTotal}` : "—"}
+            {frame?.link ? `${frame.link.nodesDropped}/${frame.link.nodesTotal}` : "—"}
           </p>
         </div>
         <div className="mt-[var(--space-sm)] grid gap-[var(--space-sm)]">
-          <BarMeter value={frame?.lidar.leftM ?? 0} max={2.5} label="Lidar L" warnBelow={0.4} />
-          <BarMeter value={frame?.lidar.rightM ?? 0} max={2.5} label="Lidar R" warnBelow={0.4} />
+          <BarMeter value={frame?.lidar?.leftM ?? 0} max={2.5} label="Lidar L" warnBelow={0.4} />
+          <BarMeter value={frame?.lidar?.rightM ?? 0} max={2.5} label="Lidar R" warnBelow={0.4} />
         </div>
       </Bezel>
       <Bezel title="Chainage">
-        <p className="num m-0 text-[length:var(--text-lg)]">{frame ? `${frame.mission.distanceM.toFixed(1)} m` : "—"}</p>
+        <p className="num m-0 text-[length:var(--text-lg)]">
+          {frame?.mission?.distanceM != null ? `${frame.mission.distanceM.toFixed(1)} m` : "—"}
+        </p>
         <p className="label mb-[var(--space-2xs)] mt-[var(--space-xs)]">Tunnel progress</p>
         <div className="h-[8px] border border-[var(--color-rule)]">
           <div
             className="h-full bg-[var(--color-accent)]"
-            style={{ width: `${frame?.mission.tunnelProgressPct ?? 0}%` }}
+            style={{ width: `${frame?.mission?.tunnelProgressPct ?? 0}%` }}
           />
         </div>
         <p className="num mt-[var(--space-2xs)] text-[length:var(--text-xs)] text-[var(--color-ink-2)]">
-          Session {frame ? formatElapsed(frame.mission.elapsedSec) : "—"}
+          Session {frame?.mission?.elapsedSec != null ? formatElapsed(frame.mission.elapsedSec) : "—"}
         </p>
       </Bezel>
       <Bezel title="Safety system" className={estopActive ? "border-[var(--color-hazard)]" : ""}>
@@ -80,15 +82,22 @@ export function RobotHealth() {
             type="button"
             className="w-full py-2 bg-[var(--color-hazard)] text-[var(--color-accent-ink)] hover:bg-red-800 font-bold tracking-wider text-xs border border-red-700 uppercase cursor-pointer transition-colors duration-200"
             disabled={link !== "online"}
-            onClick={() => sendCommand({ type: "estop" })}
+            onClick={() => {
+              console.log("👉 UI BUTTON WAS CLICKED!");
+              console.log("Current Link State:", link);
+              sendCommand({ type: "estop" });
+            }}
           >
             🛑 EMERGENCY STOP
           </button>
         )}
       </Bezel>
-      <nav className="grid grid-cols-2" aria-label="Console views">
+      <nav className="grid grid-cols-3" aria-label="Console views">
         <button type="button" className="latch" aria-pressed={view === "dashboard"} onClick={() => setView("dashboard")}>
           Dashboard
+        </button>
+        <button type="button" className="latch" aria-pressed={view === "twin"} onClick={() => setView("twin")}>
+          Digital twin
         </button>
         <button type="button" className="latch" aria-pressed={view === "control"} onClick={() => setView("control")}>
           Robot control

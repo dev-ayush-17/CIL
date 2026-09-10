@@ -1,0 +1,4 @@
+ip = 10.52.239.215
+Connecting to WiFi: moto g64 5G_3117
+...........
+[WiFi] Connected! ESP32 IP Address: 10.52.239.215
