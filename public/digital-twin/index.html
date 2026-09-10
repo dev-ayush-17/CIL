@@ -376,15 +376,58 @@
             }
         });
 
+        function parseInboundData(eventData) {
+            try {
+                const raw = typeof eventData === 'string' ? JSON.parse(eventData) : eventData;
+                const source = raw.frame ? raw.frame : raw;
+
+                const pose = {
+                    x: (source.pose && source.pose.x !== undefined) ? Number(source.pose.x) : robotGroup.position.x,
+                    z: (source.pose && source.pose.z !== undefined) ? Number(source.pose.z) : robotGroup.position.z,
+                    yaw: (source.pose && source.pose.yaw !== undefined) ? Number(source.pose.yaw) : robotGroup.rotation.y,
+                };
+
+                let tof = { left: 0, right: 0 };
+                if (source.tof) {
+                    tof.left = Number(source.tof.left || source.tof.leftM || 0);
+                    tof.right = Number(source.tof.right || source.tof.rightM || 0);
+                } else if (source.lidar) {
+                    tof.left = Number(source.lidar.leftM || source.lidar.left || 0);
+                    tof.right = Number(source.lidar.rightM || source.lidar.right || 0);
+                }
+
+                let sensors = { methane: 0, co: 0, sulfur: 0, co2: 400, o2: 20.9, water: 0 };
+                if (source.sensors) {
+                    sensors.methane = Number(source.sensors.methane || source.sensors.ch4 || 0);
+                    sensors.co = Number(source.sensors.co || 0);
+                    sensors.sulfur = Number(source.sensors.sulfur || source.sensors.so2 || 0);
+                    sensors.co2 = Number(source.sensors.co2 || 400);
+                    sensors.o2 = Number(source.sensors.o2 || 20.9);
+                    sensors.water = Number(source.sensors.water || source.sensors.h2o || 0);
+                } else if (source.gas) {
+                    sensors.methane = Number(source.gas.ch4Ppm || 0);
+                    sensors.co = Number(source.gas.coPpm || (source.gas.coStats ? source.gas.coStats.currentC : 0));
+                }
+
+                return { pose, tof, sensors };
+            } catch (err) {
+                console.error("Failed to parse inbound telemetry frame:", err);
+                return null;
+            }
+        }
+
         function generateDummyData() {
             const isMoving = window.activeAnim !== 'stop';
             const spike = Math.random() > 0.90; 
             
+            const baseLeft = 0.9 + Math.sin(robotGroup.position.z * 0.5) * 0.4;
+            const baseRight = 1.1 + Math.cos(robotGroup.position.z * 0.5) * 0.3;
+
             return {
                 pose: { x: robotGroup.position.x, z: robotGroup.position.z, yaw: robotGroup.rotation.y },
                 tof: { 
-                    left: isMoving ? 0.8 + Math.random()*0.2 : 0, 
-                    right: isMoving ? 0.8 + Math.random()*0.2 : 0 
+                    left: isMoving ? Math.max(0.3, baseLeft + (Math.random() * 0.1 - 0.05)) : 0, 
+                    right: isMoving ? Math.max(0.3, baseRight + (Math.random() * 0.1 - 0.05)) : 0 
                 },
                 sensors: {
                     methane: spike ? 18 + Math.random()*40 : Math.random() * 6,
@@ -395,24 +438,46 @@
         }
         
         // WebSockets
-        const ws = new WebSocket('ws://localhost:8765');
-        ws.onopen = () => document.getElementById('ws-status').innerText = 'WS: Connected';
-        ws.onclose = () => document.getElementById('ws-status').innerText = 'WS: Disconnected';
-        ws.onmessage = (event) => {
-            if (!window.isLiveMode) return;
-            const data = JSON.parse(event.data);
+        let ws = null;
+        function initWebSocket() {
+            const host = window.location.hostname || 'localhost';
+            const wsUrl = 'ws://' + host + ':8765';
             
-            const oldX = robotGroup.position.x;
-            const oldZ = robotGroup.position.z;
-            
-            robotGroup.position.set(data.pose.x, 0, data.pose.z);
-            robotGroup.rotation.y = data.pose.yaw;
-            
-            camera.position.x += (robotGroup.position.x - oldX);
-            camera.position.z += (robotGroup.position.z - oldZ);
-            
-            processTelemetry(data);
-        };
+            try {
+                ws = new WebSocket(wsUrl);
+                ws.onopen = () => {
+                    const statusEl = document.getElementById('ws-status');
+                    if (statusEl) statusEl.innerText = 'WS: Connected (' + wsUrl + ')';
+                };
+                ws.onclose = () => {
+                    const statusEl = document.getElementById('ws-status');
+                    if (statusEl) statusEl.innerText = 'WS: Disconnected';
+                    setTimeout(initWebSocket, 3000);
+                };
+                ws.onerror = () => {
+                    if (ws) ws.close();
+                };
+                ws.onmessage = (event) => {
+                    if (!window.isLiveMode) return;
+                    const data = parseInboundData(event.data);
+                    if (!data) return;
+                    
+                    const oldX = robotGroup.position.x;
+                    const oldZ = robotGroup.position.z;
+                    
+                    robotGroup.position.set(data.pose.x, 0, data.pose.z);
+                    robotGroup.rotation.y = data.pose.yaw;
+                    
+                    camera.position.x += (robotGroup.position.x - oldX);
+                    camera.position.z += (robotGroup.position.z - oldZ);
+                    
+                    processTelemetry(data);
+                };
+            } catch (e) {
+                console.warn("WebSocket initialization error:", e);
+            }
+        }
+        initWebSocket();
 
         const kf = {
             forward: [ { FrontR: LIFT, BackL: LIFT, FrontL: 0, BackR: 0, stubsliderbottom: SLIDE, stubsliderupper: 0 }, { FrontR: 0, BackL: 0, FrontL: LIFT, BackR: LIFT, stubsliderbottom: -SLIDE, stubsliderupper: 0 } ],
