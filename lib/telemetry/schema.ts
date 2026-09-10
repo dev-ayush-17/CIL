@@ -50,9 +50,19 @@ export interface AlertEntry {
   message: string;
 }
 
+export type SensorQuality = "warming_up" | "calibrating" | "ok" | "error";
+
+export interface RobotPose {
+  x: number;
+  z: number;
+  yaw: number;
+}
+
 export interface TelemetryFrame {
   seq: number;
   receivedAt: string;
+  /** Robot pose in world coordinates. null = no live pose, twin uses simulation. */
+  pose: RobotPose | null;
   mission: {
     id: string;
     phase: MissionPhase;
@@ -83,8 +93,10 @@ export interface TelemetryFrame {
   };
   gas: {
     coPpm: number;
+    coStatus?: SensorQuality;
     coStats: TemperatureStats;
     ch4Ppm: number;
+    ch4Status?: SensorQuality;
     ch4Warn: boolean;
     ch4Crit: boolean;
     ch4WarnThresholdPpm: number;

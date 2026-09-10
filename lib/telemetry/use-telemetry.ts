@@ -12,7 +12,8 @@ export type LinkState = "connecting" | "online" | "stale" | "offline" | "reconne
 const generateId = () => Math.random().toString(36).slice(2, 11);
 
 export function useTelemetry() {
-  const url = process.env.NEXT_PUBLIC_TELEMETRY_WS_URL ?? DEFAULT_URL;
+  const rawUrl = process.env.NEXT_PUBLIC_TELEMETRY_WS_URL ?? DEFAULT_URL;
+  const url = rawUrl.trim().replace(/^["']|["']$/g, "");
   const [frame, setFrame] = useState<TelemetryFrame | null>(null);
   const [history, setHistory] = useState<TelemetryFrame[]>([]);
   const [link, setLink] = useState<LinkState>("connecting");
@@ -93,6 +94,8 @@ export function useTelemetry() {
     const connect = () => {
       if (stopped) return;
       
+      console.log("🌐 Connecting Telemetry WebSocket to:", url);
+
       // If we already tried once and backoff > 800, we are reconnecting
       if (backoffRef.current > 800) {
         setLink("reconnecting");
@@ -104,6 +107,7 @@ export function useTelemetry() {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        console.log("✅ WebSocket Connected successfully to:", url);
         backoffRef.current = 800;
         setLink("online");
         lastReceivedRef.current = Date.now();
@@ -207,7 +211,8 @@ export function useTelemetry() {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
+        console.warn(`⚠️ WebSocket closed (code: ${ev.code}, reason: "${ev.reason}") for URL: ${url}`);
         // Fix: React StrictMode fires unmount immediately. 
         // If an old socket's onclose fires *after* a new socket is created, 
         // it shouldn't be allowed to nullify the new socket's ref.
@@ -226,6 +231,7 @@ export function useTelemetry() {
       };
 
       ws.onerror = () => {
+        console.warn("⚠️ WebSocket connection attempt failed for:", url);
         ws.close();
       };
     };

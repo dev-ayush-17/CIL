@@ -213,3 +213,38 @@ To test and verify the Phase 2 bidirectional link features locally, run the Next
 - To trigger a deterministic failure: navigate to **Operator Note**, type `"fail"` or `"reject"` (e.g., `"fail sensor scan"`), and click **Stamp Log**.
 - The mock server will return `ok: false` with a simulated error.
 - Verify that the Bezel header displays a flashing `WAITING FOR ACK ⚠️` or `UNCONFIRMED ⚠️` warning frame, demonstrating the reconciliation handler.
+
+---
+
+## 5. Phase 3: Real Gas Sensor Data (MQ-4 Methane & MQ-7 CO)
+
+Phase 3 implements the first live sensor-to-dashboard pipeline using physical MQ-4 (CH4) and MQ-7 (CO) analog resistive gas sensors connected directly to the ESP32.
+
+### A. Hardware Wiring & Voltage Divider Specification
+- **Power Supply:** Connect VCC to ESP32 +5V (VIN) or external 5V regulated power supply (5V required for internal heaters). Connect GND to common ground.
+- **ADC Pin Selection (ADC1 Safe):**
+  - **MQ-4 (Methane CH4):** Connect to **GPIO32** (ADC1 Channel 4).
+  - **MQ-7 (Carbon Monoxide CO):** Connect to **GPIO34** (ADC1 Channel 6).
+  - *Do NOT use ADC2 pins (GPIO 0, 2, 4, 12-15, 25-27) as Wi-Fi operations disable ADC2!*
+- **Voltage Divider Circuit:**
+  ```text
+  Sensor Analog Out (0V - 5V) ----[ 10k Ω ]----+---- ESP32 ADC Pin (0V - 3.3V Max)
+                                               |
+                                           [ 20k Ω ]
+                                               |
+                                              GND
+  ```
+  - Ratio: $V_{\text{ADC}} = V_{\text{sensor}} \times \frac{20\text{k}}{10\text{k} + 20\text{k}} = V_{\text{sensor}} \times \frac{2}{3}$
+  - Multiplier: $V_{\text{sensor}} = V_{\text{ADC}} \times 1.5$
+
+### B. Boot Warm-Up & Clean-Air Calibration State Machine
+1. **WARMING_UP State (0–30s):** Sensors heat up to operational temperature. Telemetry frames broadcast `coStatus: "warming_up"` and `ch4Status: "warming_up"`. Dashboard displays amber `WARMING UP` badges and dims numeric values.
+2. **CALIBRATING State (30–45s):** Automatically averages clean-air sensor resistance readings over 15 seconds to compute baseline $R_0$ values for MQ-4 and MQ-7. Telemetry frames broadcast `coStatus: "calibrating"` and `ch4Status: "calibrating"`. Dashboard displays cyan `CALIBRATING R0` badges.
+3. **SENSOR_OK State (>45s):** Live exponential curve regressions calculate exact gas concentration in PPM ($PPM = a \cdot (R_s / R_0)^b$). Telemetry frames broadcast `coStatus: "ok"` and `ch4Status: "ok"`. Dashboard updates values live.
+
+### C. 5-Step Verification Checklist
+1. **Serial-level Sanity Check:** Flash [`docs/esp32-reference/firmware.ino`](docs/esp32-reference/firmware.ino) to ESP32. Open Arduino Serial Monitor at 115200 baud. Confirm raw ADC mV, computed $R_s$, and PPM logs print every second. Expose MQ-4 to gas stimulus (e.g. unlit lighter in ventilated area) and observe PPM spike.
+2. **Warm-Up Behavior Check:** Reset ESP32 and observe status transition sequence in Serial Monitor: `warming_up` (30s) $\rightarrow$ `calibrating` (15s) $\rightarrow$ `ok` (baselines $R_0$ logged).
+3. **Wire-Level Check:** Open Chrome DevTools $\rightarrow$ Network $\rightarrow$ WS $\rightarrow$ Messages tab while connected to ESP32. Verify incoming telemetry JSON frames contain `"coPpm"`, `"ch4Ppm"`, `"coStatus"`, and `"ch4Status"`.
+4. **Dashboard UI Check:** View Atmosphere panel in Dashboard. Confirm `WARMING UP` / `CALIBRATING R0` badges display during initial boot and transition cleanly to live numbers labeled `(approx)`.
+5. **Stimulus-Response Check:** Perform gas stimulus test near MQ-4 while watching live Dashboard UI. Confirm Atmosphere panel row and Analytics view Methane line-chart update in real time.

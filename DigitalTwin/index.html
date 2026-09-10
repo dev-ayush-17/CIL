@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Digital Twin - Cave Explorer</title>
+    <style>
+        /* Base typography & theme */
+        body { 
+            margin: 0; overflow: hidden; background: #050B14; 
+            color: #E2E8F0; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 1. Main Control Panel (Glassmorphism + Scrolling) */
+        #controls { 
+            position: absolute; top: 20px; left: 20px; 
+            background: rgba(15, 23, 42, 0.75); 
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 20px; border-radius: 16px; z-index: 10; 
+            box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+            display: flex; flex-direction: column; gap: 8px; width: 240px; 
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            max-height: calc(100vh - 40px); /* Prevents panel from going off-screen */
+            overflow-y: auto; /* Enables scrolling if needed */
+        }
+
+        /* Premium Custom Scrollbar for the Control Panel */
+        #controls::-webkit-scrollbar { width: 4px; }
+        #controls::-webkit-scrollbar-track { background: transparent; }
+        #controls::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+        #controls::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+
+        /* Section Headers */
+        .section-title {
+            text-transform: uppercase; font-size: 11px; font-weight: 600;
+            color: #94A3B8; letter-spacing: 0.8px; margin-top: 10px; margin-bottom: 2px;
+            border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 6px;
+            flex-shrink: 0;
+        }
+
+        /* 2. Premium Button Styling */
+        button { 
+            background: rgba(255, 255, 255, 0.06); 
+            border: 1px solid rgba(255, 255, 255, 0.08); 
+            padding: 10px 14px; font-size: 13px; font-weight: 500; 
+            cursor: pointer; border-radius: 8px; color: #F8FAFC; 
+            transition: all 0.2s ease; letter-spacing: 0.3px;
+            flex-shrink: 0;
+        }
+        button:hover { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.2); }
+        button:active { transform: scale(0.98); }
+
+        /* Destructive Action (Stop) */
+        button.stop { background: rgba(239, 68, 68, 0.1); color: #FCA5A5; border-color: rgba(239, 68, 68, 0.2); }
+        button.stop:hover { background: rgba(239, 68, 68, 0.25); color: #FECACA; }
+
+        /* Accent Action (Marker) */
+        button.marker { background: rgba(250, 204, 21, 0.1); color: #FDE047; border-color: rgba(250, 204, 21, 0.2); margin-top: 4px; }
+        button.marker:hover { background: rgba(250, 204, 21, 0.2); color: #FEF08A; }
+
+        /* 3. Telemetry Readout (Clean layout) */
+        .data-panel { 
+            font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace; 
+            font-size: 12px; color: #CBD5E1; 
+            background: rgba(0, 0, 0, 0.25); padding: 12px; 
+            border-radius: 10px; line-height: 1.6; 
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex; flex-direction: column; gap: 4px;
+            flex-shrink: 0;
+        }
+        .data-row { display: flex; justify-content: space-between; }
+        .data-label { color: #94A3B8; font-family: -apple-system, sans-serif; font-size: 11px;}
+
+        /* Toggle Switch */
+        .mode-toggle { 
+            display: flex; align-items: center; justify-content: space-between; 
+            background: rgba(0, 0, 0, 0.25); padding: 12px 14px; 
+            border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05);
+            flex-shrink: 0;
+        }
+        .switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #475569; transition: .3s; border-radius: 20px; }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: #fff; transition: .3s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3);}
+        input:checked + .slider { background-color: #3B82F6; }
+        input:checked + .slider:before { transform: translateX(16px); }
+
+        /* 4. Clickable Tile Popup (Glassmorphism Table) */
+        #tile-info {
+            position: absolute;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            color: #E2E8F0;
+            padding: 18px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            display: none;
+            z-index: 100;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.6);
+            pointer-events: auto;
+            min-width: 240px;
+        }
+        .popup-header {
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 10px; margin-bottom: 12px;
+        }
+        .popup-title { font-weight: 600; color: #FDE047; font-size: 13px; letter-spacing: 0.3px;}
+        .popup-close {
+            cursor: pointer; color: #94A3B8; font-size: 16px; line-height: 1;
+            transition: color 0.2s; padding: 0 4px;
+        }
+        .popup-close:hover { color: #F8FAFC; }
+
+        #tile-info table { width: 100%; border-collapse: collapse; }
+        #tile-info th { text-align: left; padding: 4px 0 8px 0; color: #94A3B8; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        #tile-info td { padding: 6px 0; font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace; font-size: 12px;}
+        #tile-info td:last-child, #tile-info th:last-child { text-align: right; }
+        #tile-info tr:not(:last-child) td { border-bottom: 1px solid rgba(255,255,255,0.03); }
+    </style>
+</head>
+<body>
+    <!-- The Tile Data Popup -->
+    <div id="tile-info"></div>
+
+    <div id="controls">
+        <div class="mode-toggle">
+            <span style="font-size: 13px; font-weight:600; color: #F8FAFC;">Live ESP32 Data</span>
+            <label class="switch">
+                <input type="checkbox" id="modeSwitch" onchange="toggleMode()">
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div id="ws-status" style="font-size: 11px; color: #64748B; text-align: center; margin-top: -4px;">WS: Disconnected</div>
+
+        <div class="section-title">Kinematics Control</div>
+        <button onclick="playAnimation('forward')">Walk Forward</button>
+        <button onclick="playAnimation('backward')">Walk Backward</button>
+        <button onclick="playAnimation('left')">Turn Left</button>
+        <button onclick="playAnimation('right')">Turn Right</button>
+        <button class="stop" onclick="playAnimation('stop')">Emergency Stop</button>
+        
+        <button class="marker" onclick="dropRescueMarker()">📍 Drop Rescue Marker</button>
+
+        <div class="section-title">Live Telemetry</div>
+        <div class="data-panel" id="telemetry-readout">
+            <span style="color: #64748B;">Waiting for stream...</span>
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.150.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.150.0/examples/jsm/",
+                "three/examples/jsm/": "https://unpkg.com/three@0.150.0/examples/jsm/",
+                "urdf-loader": "https://unpkg.com/urdf-loader@0.12.1/src/URDFLoader.js"
+            }
+        }
+    </script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import URDFLoader from 'urdf-loader';
+        import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // 1. Scene & Deep Cinematic Atmosphere
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050B14); 
+        scene.fog = new THREE.FogExp2(0x050B14, 0.08); 
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100);
+        camera.position.set(1.5, 1.2, 2.5); 
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true; 
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping; 
+        renderer.toneMappingExposure = 0.9; 
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // 2. Sophisticated Lighting
+        const ambientLight = new THREE.AmbientLight(0x1B2A3A, 1.2); 
+        scene.add(ambientLight);
+
+        const mainLight = new THREE.DirectionalLight(0xD7DFE9, 2.0); 
+        mainLight.position.set(4, 7, 3);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 2048;
+        mainLight.shadow.mapSize.height = 2048;
+        mainLight.shadow.camera.near = 0.1;
+        mainLight.shadow.camera.far = 25;
+        mainLight.shadow.bias = -0.0005;
+        scene.add(mainLight);
+
+        const rimLight = new THREE.DirectionalLight(0x118BF7, 0.8); 
+        rimLight.position.set(-4, 2, -4);
+        scene.add(rimLight);
+
+        // 3. Ground & Hex Grid
+        const groundGeo = new THREE.PlaneGeometry(200, 200);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x050B14, roughness: 0.95, metalness: 0.05 });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.01;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        const hexGrid = new THREE.Group();
+        const hexRadius = 0.2;
+        const hexGeom = new THREE.CircleGeometry(hexRadius, 6);
+        const hexEdges = new THREE.EdgesGeometry(hexGeom);
+        const hexMat = new THREE.LineBasicMaterial({ color: 0x1B344A, transparent: true, opacity: 0.6 }); 
+        for (let q = -25; q <= 25; q++) {
+            for (let r = -25; r <= 25; r++) {
+                const hex = new THREE.LineSegments(hexEdges, hexMat);
+                hex.position.set(hexRadius * Math.sqrt(3) * (q + r/2), 0, hexRadius * 3/2 * r);
+                hex.rotation.x = -Math.PI / 2;
+                hex.rotation.z = Math.PI / 6; 
+                hexGrid.add(hex);
+            }
+        }
+        scene.add(hexGrid);
+
+        // Tile Highlight Cursor
+        const highlightGeo = new THREE.EdgesGeometry(new THREE.CircleGeometry(hexRadius * 0.95, 6));
+        const highlightMat = new THREE.LineBasicMaterial({ color: 0xFFFFFF, linewidth: 2 });
+        const highlightMesh = new THREE.LineSegments(highlightGeo, highlightMat);
+        highlightMesh.rotation.x = -Math.PI / 2;
+        highlightMesh.rotation.z = Math.PI / 6;
+        highlightMesh.position.y = 0.005; 
+        highlightMesh.visible = false; 
+        scene.add(highlightMesh);
+
+        // 4. Cave Walls
+        const envGroup = new THREE.Group();
+        scene.add(envGroup);
+        const maxWalls = 10000;
+        const wallMat = new THREE.MeshStandardMaterial({ 
+            color: 0x4C546F, 
+            roughness: 0.7,
+            metalness: 0.2
+        });
+        const wallInstanced = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.2, 0.05), wallMat, maxWalls);
+        wallInstanced.castShadow = true;
+        wallInstanced.receiveShadow = true;
+        wallInstanced.count = 0;
+        scene.add(wallInstanced);
+        const dummyMatrix = new THREE.Object3D();
+
+        // 5. Robot
+        const robotGroup = new THREE.Group();
+        scene.add(robotGroup);
+        let robot = null;
+        const manager = new THREE.LoadingManager();
+        const loader = new URDFLoader(manager);
+        
+        loader.loadMeshCb = (path, manager, done) => {
+            new STLLoader(manager).load(path, (geometry) => {
+                done(new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xF1F5F9 })));
+            }, undefined, (err) => { done(null, err); });
+        };
+        loader.packages = { 'dog02_large_description': './' }; 
+        loader.load('robot.urdf', result => {
+            robot = result;
+            robot.rotation.x = -Math.PI / 2; 
+            robot.position.y = 0.12; 
+            
+            robot.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    child.material = new THREE.MeshStandardMaterial({
+                        color: 0xF1F5F9,     
+                        roughness: 0.25,
+                        metalness: 0.15
+                    });
+                }
+            });
+            robotGroup.add(robot); 
+        });
+
+        // State variables
+        window.isLiveMode = false;
+        window.activeAnim = 'stop';
+        window.frameIndex = 0;
+        window.currentJoints = { FrontR: 0, BackR: 0, FrontL: 0, BackL: 0, stubsliderbottom: 0, stubsliderupper: 0 };
+        const animSpeed = 0.08, walkSpeed = 0.001, turnSpeed = 0.003;
+        const LIFT = 0.02, SLIDE = 0.02, TURN = 0.174;
+        let dummyFrameCounter = 0;
+
+        // UI Functions
+        window.toggleMode = function() {
+            window.isLiveMode = document.getElementById('modeSwitch').checked;
+            window.activeAnim = 'stop';
+        };
+
+        window.playAnimation = function(animName) {
+            if (window.isLiveMode) return;
+            window.activeAnim = animName;
+            window.frameIndex = 0;
+        };
+
+        window.dropRescueMarker = function() {
+            const arrowGroup = new THREE.Group();
+            const markerMat = new THREE.MeshStandardMaterial({
+                color: 0xFFD43B, 
+                emissive: 0xD9A514, 
+                emissiveIntensity: 0.6,
+                roughness: 0.15,
+                metalness: 0.2
+            });
+
+            const cone = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.15, 16), markerMat);
+            cone.rotation.x = Math.PI;
+            cone.position.y = 0.075;
+            cone.castShadow = true;
+
+            const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.15), markerMat);
+            cylinder.position.y = 0.2;
+            cylinder.castShadow = true;
+
+            arrowGroup.add(cone);
+            arrowGroup.add(cylinder);
+            
+            arrowGroup.position.set(robotGroup.position.x, 0.15, robotGroup.position.z);
+            envGroup.add(arrowGroup);
+        };
+
+        // Click-to-inspect logic
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const tileInfo = document.getElementById('tile-info');
+        
+        window.activeHexKey = null; 
+        
+        window.closeTileInfo = function() {
+            tileInfo.style.display = 'none';
+            window.activeHexKey = null; 
+            highlightMesh.visible = false; 
+        }
+
+        window.addEventListener('click', (event) => {
+            if(event.target.tagName === 'BUTTON' || event.target.closest('#controls') || event.target.closest('#tile-info')) {
+                return;
+            }
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, camera);
+            
+            const hexMeshes = Array.from(coloredHexes.values());
+            const intersects = raycaster.intersectObjects(hexMeshes);
+
+            if (intersects.length > 0) {
+                const hitMesh = intersects[0].object;
+                const tData = hitMesh.userData.telemetry;
+                const key = hitMesh.userData.cellKey;
+                
+                if (window.activeHexKey === key) {
+                    window.closeTileInfo();
+                    return;
+                }
+
+                window.activeHexKey = key;
+                
+                highlightMesh.position.x = hitMesh.position.x;
+                highlightMesh.position.z = hitMesh.position.z;
+                highlightMesh.visible = true;
+                
+                // Refined Premium Table HTML - Updated Sensors
+                tileInfo.innerHTML = `
+                    <div class="popup-header">
+                        <span class="popup-title">Log Data: Tile [${key}]</span>
+                        <span class="popup-close" onclick="closeTileInfo()">×</span>
+                    </div>
+                    <table>
+                        <tr>
+                            <th>Sensor Data</th>
+                            <th>Reading</th>
+                        </tr>
+                        <tr>
+                            <td>PM 1.0</td>
+                            <td>${tData.sensors.pm1.toFixed(1)} µg/m³</td>
+                        </tr>
+                        <tr>
+                            <td>PM 2.5</td>
+                            <td>${tData.sensors.pm2_5.toFixed(1)} µg/m³</td>
+                        </tr>
+                        <tr style="color:${tData.sensors.pm10 > 75 ? '#FCA5A5' : '#86EFAC'}">
+                            <td>PM 10</td>
+                            <td>${tData.sensors.pm10.toFixed(1)} µg/m³</td>
+                        </tr>
+                        <tr style="color:${tData.sensors.co > 25 ? '#FCA5A5' : '#86EFAC'}">
+                            <td>Carbon Monoxide</td>
+                            <td>${tData.sensors.co.toFixed(1)} ppm</td>
+                        </tr>
+                        <tr style="color:${tData.sensors.h2s > 5 ? '#FCA5A5' : '#86EFAC'}">
+                            <td>Hydrogen Sulfide</td>
+                            <td>${tData.sensors.h2s.toFixed(1)} ppm</td>
+                        </tr>
+                        <tr style="color:${tData.sensors.o2 < 19.5 ? '#FCA5A5' : '#86EFAC'}">
+                            <td>Oxygen (O2)</td>
+                            <td>${tData.sensors.o2.toFixed(1)} %</td>
+                        </tr>
+                        <tr style="color:${tData.sensors.temp > 35 ? '#FCA5A5' : '#86EFAC'}">
+                            <td>Temperature</td>
+                            <td>${tData.sensors.temp.toFixed(1)} °C</td>
+                        </tr>
+                        <tr>
+                            <td>Humidity</td>
+                            <td>${tData.sensors.humidity.toFixed(1)} %</td>
+                        </tr>
+                    </table>
+                `;
+                
+                tileInfo.style.left = (event.clientX + 15) + 'px';
+                tileInfo.style.top = (event.clientY + 15) + 'px';
+                tileInfo.style.display = 'block'; 
+            } else {
+                window.closeTileInfo();
+            }
+        });
+
+        // Track which hex cells have already been colored
+        const coloredHexes = new Map();
+
+        // 6. Data Processors & Clean UI Heatmap Injection
+        function processTelemetry(data) {
+            // Premium layout for the live telemetry panel - Updated Sensors
+            document.getElementById('telemetry-readout').innerHTML = `
+                <div class="data-row"><span class="data-label">Pos:</span> <span>X:${data.pose.x.toFixed(2)} Z:${data.pose.z.toFixed(2)}</span></div>
+                <div class="data-row" style="margin-bottom: 6px;"><span class="data-label">ToF:</span> <span>L:${data.tof.left.toFixed(1)} R:${data.tof.right.toFixed(1)}</span></div>
+                <div style="height: 1px; background: rgba(255,255,255,0.05); margin: 4px 0;"></div>
+                <div class="data-row"><span class="data-label">PM 1.0</span> <span>${data.sensors.pm1.toFixed(1)} µg/m³</span></div>
+                <div class="data-row"><span class="data-label">PM 2.5</span> <span>${data.sensors.pm2_5.toFixed(1)} µg/m³</span></div>
+                <div class="data-row" style="color:${data.sensors.pm10 > 75 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">PM 10</span> <span>${data.sensors.pm10.toFixed(0)} µg/m³</span></div>
+                <div class="data-row" style="color:${data.sensors.co > 25 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">CO</span> <span>${data.sensors.co.toFixed(1)} ppm</span></div>
+                <div class="data-row" style="color:${data.sensors.h2s > 5 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">H2S</span> <span>${data.sensors.h2s.toFixed(1)} ppm</span></div>
+                <div class="data-row" style="color:${data.sensors.o2 < 19.5 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">O2</span> <span>${data.sensors.o2.toFixed(1)} %</span></div>
+                <div class="data-row" style="color:${data.sensors.temp > 35 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">TEMP</span> <span>${data.sensors.temp.toFixed(1)} °C</span></div>
+                <div class="data-row"><span class="data-label">HUM</span> <span>${data.sensors.humidity.toFixed(1)} %</span></div>
+            `;
+
+            if(data.tof.left > 0 && data.tof.left < 2.0) plotWall(data.tof.left, Math.PI/2, data.pose);
+            if(data.tof.right > 0 && data.tof.right < 2.0) plotWall(data.tof.right, -Math.PI/2, data.pose);
+
+            let dangerLevel = 0; 
+            // Danger evaluation using updated hazard thresholds
+            if (data.sensors.h2s > 10 || data.sensors.co > 50 || data.sensors.pm10 > 150 || data.sensors.temp > 45 || data.sensors.o2 < 19.5) {
+                dangerLevel = 2; // Danger Zone
+            } else if (data.sensors.h2s > 5 || data.sensors.co > 25 || data.sensors.pm10 > 75 || data.sensors.temp > 35) {
+                dangerLevel = 1; // Middle Range Warning
+            }
+
+            let heatColor = 0xC7EA47; // Bright Green (Safe)
+            if (dangerLevel === 1) heatColor = 0xFFEA00; // Bright Yellow (Middle Range)
+            if (dangerLevel === 2) heatColor = 0xEF4444; // Bright Red (Danger Zone)
+
+            colorCurrentHexCell(data, heatColor, dangerLevel > 0 ? 0.9 : 0.4);
+        }
+
+        function plotWall(distance, angleOffset, pose) {
+            if (wallInstanced.count >= maxWalls) return;
+            const absoluteAngle = pose.yaw + angleOffset;
+            dummyMatrix.position.set(pose.x + Math.sin(absoluteAngle) * distance, 0.1, pose.z + Math.cos(absoluteAngle) * distance);
+            dummyMatrix.rotation.y = pose.yaw;
+            dummyMatrix.updateMatrix();
+            wallInstanced.setMatrixAt(wallInstanced.count, dummyMatrix.matrix);
+            wallInstanced.instanceMatrix.needsUpdate = true;
+            wallInstanced.count++;
+        }
+
+        function colorCurrentHexCell(data, colorHex, opacity) {
+            const pose = data.pose;
+            const r = Math.round(pose.z / (hexRadius * 3/2));
+            const q = Math.round((pose.x / (hexRadius * Math.sqrt(3))) - (r / 2));
+            const cellKey = `${q},${r}`;
+
+            if (coloredHexes.has(cellKey)) return;
+
+            const x = hexRadius * Math.sqrt(3) * (q + r/2);
+            const z = hexRadius * 3/2 * r;
+
+            const hexFillGeo = new THREE.CircleGeometry(hexRadius * 0.95, 6); 
+            const hexFillMat = new THREE.MeshStandardMaterial({ 
+                color: colorHex, 
+                emissive: colorHex,
+                emissiveIntensity: 0.9,
+                transparent: true, 
+                opacity: opacity, 
+                side: THREE.DoubleSide,
+                roughness: 0.4
+            });
+
+            const hexMesh = new THREE.Mesh(hexFillGeo, hexFillMat);
+            hexMesh.rotation.x = -Math.PI / 2;
+            hexMesh.rotation.z = Math.PI / 6;
+            hexMesh.position.set(x, 0.002, z); 
+            hexMesh.receiveShadow = true;
+            
+            // EMBED THE SENSOR LOG DATA DIRECTLY INTO THE MESH
+            hexMesh.userData = { cellKey: cellKey, telemetry: data };
+
+            envGroup.add(hexMesh);
+            coloredHexes.set(cellKey, hexMesh);
+        }
+
+        function generateDummyData() {
+            const isMoving = window.activeAnim !== 'stop';
+            const spike = Math.random() > 0.90; 
+            
+            return {
+                pose: { x: robotGroup.position.x, z: robotGroup.position.z, yaw: robotGroup.rotation.y },
+                tof: { 
+                    left: isMoving ? 0.8 + Math.random()*0.2 : 0, 
+                    right: isMoving ? 0.8 + Math.random()*0.2 : 0 
+                },
+                // Generating dummy data specifically for the new sensor configuration
+                sensors: {
+                    pm1: spike ? 50 + Math.random()*50 : Math.random() * 10,
+                    pm2_5: spike ? 75 + Math.random()*50 : Math.random() * 15,
+                    pm10: spike ? 150 + Math.random()*100 : Math.random() * 20,
+                    co: spike ? 45 + Math.random()*50 : Math.random() * 5, 
+                    o2: 20.9 - (spike ? Math.random()*2 : Math.random()*0.2), // Oxygen dropping during spike
+                    h2s: spike ? 15 + Math.random()*15 : Math.random() * 2,
+                    temp: spike ? 35 + Math.random()*15 : 22 + Math.random() * 3,
+                    humidity: 45 + Math.random() * 10
+                }
+            };
+        }
+        
+        // WebSockets
+        const ws = new WebSocket('ws://localhost:8765');
+        ws.onopen = () => document.getElementById('ws-status').innerText = 'WS: Connected';
+        ws.onclose = () => document.getElementById('ws-status').innerText = 'WS: Disconnected';
+        ws.onmessage = (event) => {
+            if (!window.isLiveMode) return;
+            const data = JSON.parse(event.data);
+            
+            const oldX = robotGroup.position.x;
+            const oldZ = robotGroup.position.z;
+            
+            robotGroup.position.set(data.pose.x, 0, data.pose.z);
+            robotGroup.rotation.y = data.pose.yaw;
+            
+            camera.position.x += (robotGroup.position.x - oldX);
+            camera.position.z += (robotGroup.position.z - oldZ);
+            
+            processTelemetry(data);
+        };
+
+        const kf = {
+            forward: [ { FrontR: LIFT, BackL: LIFT, FrontL: 0, BackR: 0, stubsliderbottom: SLIDE, stubsliderupper: 0 }, { FrontR: 0, BackL: 0, FrontL: LIFT, BackR: LIFT, stubsliderbottom: -SLIDE, stubsliderupper: 0 } ],
+            backward: [ { FrontR: LIFT, BackL: LIFT, FrontL: 0, BackR: 0, stubsliderbottom: -SLIDE, stubsliderupper: 0 }, { FrontR: 0, BackL: 0, FrontL: LIFT, BackR: LIFT, stubsliderbottom: SLIDE, stubsliderupper: 0 } ],
+            left: [ { FrontR: LIFT, BackL: LIFT, FrontL: 0, BackR: 0, stubsliderbottom: 0, stubsliderupper: TURN }, { FrontR: 0, BackL: 0, FrontL: LIFT, BackR: LIFT, stubsliderbottom: 0, stubsliderupper: -TURN } ],
+            right: [ { FrontR: LIFT, BackL: LIFT, FrontL: 0, BackR: 0, stubsliderbottom: 0, stubsliderupper: -TURN }, { FrontR: 0, BackL: 0, FrontL: LIFT, BackR: LIFT, stubsliderbottom: 0, stubsliderupper: TURN } ],
+            stop: [ { FrontR: 0, BackR: 0, FrontL: 0, BackL: 0, stubsliderbottom: 0, stubsliderupper: 0 } ]
+        };
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (!window.isLiveMode && robot && kf[window.activeAnim]) {
+                const targetFrame = kf[window.activeAnim][window.frameIndex % kf[window.activeAnim].length];
+                let allReached = true;
+                for (const [j, val] of Object.entries(targetFrame)) {
+                    let diff = val - window.currentJoints[j];
+                    if (Math.abs(diff) > 0.001) {
+                        allReached = false;
+                        window.currentJoints[j] += diff * animSpeed;
+                    } else window.currentJoints[j] = val;
+                    robot.setJointValue(j, window.currentJoints[j]);
+                }
+                if (allReached) window.frameIndex++;
+
+                const oldX = robotGroup.position.x;
+                const oldZ = robotGroup.position.z;
+
+                if (window.activeAnim === 'forward') robotGroup.translateZ(walkSpeed);
+                if (window.activeAnim === 'backward') robotGroup.translateZ(-walkSpeed);
+                if (window.activeAnim === 'left') robotGroup.rotation.y += turnSpeed;
+                if (window.activeAnim === 'right') robotGroup.rotation.y -= turnSpeed;
+
+                camera.position.x += (robotGroup.position.x - oldX);
+                camera.position.z += (robotGroup.position.z - oldZ);
+
+                dummyFrameCounter++;
+                if (window.activeAnim !== 'stop' && dummyFrameCounter % 15 === 0) {
+                    const dummyData = generateDummyData();
+                    processTelemetry(dummyData); 
+                    
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify(dummyData));
+                    }
+                }
+            }
+            
+            const snapX = Math.round(robotGroup.position.x / (hexRadius * Math.sqrt(3))) * (hexRadius * Math.sqrt(3));
+            const snapZ = Math.round(robotGroup.position.z / (hexRadius * 3)) * (hexRadius * 3);
+            hexGrid.position.set(snapX, 0, snapZ);
+
+            controls.target.copy(robotGroup.position);
+            controls.update(); 
+            renderer.render(scene, camera); 
+        }
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        animate();
+    </script>
+</body>
+</html>

@@ -4,6 +4,7 @@ import { useTelemetryContext } from "@/lib/telemetry/telemetry-context";
 import { RadialGauge } from "@/components/ui/gauges";
 import { Bezel } from "@/components/ui/bezel";
 import { StatusLamp } from "@/components/ui/marks";
+import type { SensorQuality } from "@/lib/telemetry/schema";
 import { ModelViewerPanel } from "./model-viewer-panel";
 import {
   ResponsiveContainer,
@@ -20,22 +21,22 @@ import {
 export function AnalyticsView() {
   const { frame, history } = useTelemetryContext();
 
-  const currentCh4 = frame?.gas.ch4Ppm ?? 0;
-  const isCh4Warn = frame?.gas.ch4Warn ?? false;
-  const isCh4Crit = frame?.gas.ch4Crit ?? false;
+  const currentCh4 = frame?.gas?.ch4Ppm ?? 0;
+  const isCh4Warn = frame?.gas?.ch4Warn ?? false;
+  const isCh4Crit = frame?.gas?.ch4Crit ?? false;
 
-  const currentCo = frame?.gas.coPpm ?? 0;
-  const coStats = frame?.gas.coStats ?? { currentC: 0, minC: 0, maxC: 0, avgC: 0 };
+  const currentCo = frame?.gas?.coPpm ?? 0;
+  const coStats = frame?.gas?.coStats ?? { currentC: 0, minC: 0, maxC: 0, avgC: 0 };
 
-  const pm1 = frame?.air.pm1 ?? 0;
-  const pm25 = frame?.air.pm25 ?? 0;
-  const pm10 = frame?.air.pm10 ?? 0;
+  const pm1 = frame?.air?.pm1 ?? 0;
+  const pm25 = frame?.air?.pm25 ?? 0;
+  const pm10 = frame?.air?.pm10 ?? 0;
 
-  const temp = frame?.thermal.ambientC ?? 0;
-  const humidity = frame?.thermal.humidityPct ?? 0;
+  const temp = frame?.thermal?.ambientC ?? 0;
+  const humidity = frame?.thermal?.humidityPct ?? 0;
 
-  const speed = frame?.motion.speedMps ?? 0;
-  const maxSpeed = frame?.motion.speedMaxMps ?? 2;
+  const speed = frame?.motion?.speedMps ?? 0;
+  const maxSpeed = frame?.motion?.speedMaxMps ?? 2;
 
   // Map history to Recharts format
   const chartData = history.map((f) => ({
@@ -44,11 +45,11 @@ export function AnalyticsView() {
       minute: "2-digit",
       second: "2-digit",
     }),
-    ch4: f.gas.ch4Ppm,
-    temp: f.thermal.ambientC,
-    pm1: f.air.pm1,
-    pm25: f.air.pm25,
-    pm10: f.air.pm10,
+    ch4: f.gas?.ch4Ppm ?? 0,
+    temp: f.thermal?.ambientC ?? 0,
+    pm1: f.air?.pm1 ?? 0,
+    pm25: f.air?.pm25 ?? 0,
+    pm10: f.air?.pm10 ?? 0,
   }));
 
   return (
@@ -78,12 +79,13 @@ export function AnalyticsView() {
 
           {/* Environmental Summary Cards Grid */}
           <div className="mt-[var(--space-sm)] grid grid-cols-1 gap-[var(--space-xs)] sm:grid-cols-2">
-            <Ch4StatusCard ch4={currentCh4} warn={isCh4Warn} crit={isCh4Crit} />
+            <Ch4StatusCard ch4={currentCh4} warn={isCh4Warn} crit={isCh4Crit} status={frame?.gas.ch4Status} />
             <CoLevelCard
               co={currentCo}
               min={coStats.minC}
               max={coStats.maxC}
               avg={coStats.avgC}
+              status={frame?.gas.coStatus}
             />
             <ParticulatesCard pm1={pm1} pm25={pm25} pm10={pm10} />
             <AmbientClimateCard temp={temp} humidity={humidity} />
@@ -264,16 +266,36 @@ function Speedometer({ value, max }: { value: number; max: number }) {
 }
 
 /* Gas alert card block */
-function Ch4StatusCard({ ch4, warn, crit }: { ch4: number; warn: boolean; crit: boolean }) {
-  const tone = crit ? "hazard" : warn ? "caution" : "nominal";
-  const label = crit ? "EXPLOSIVE" : warn ? "CAUTION" : "NOMINAL";
+function Ch4StatusCard({
+  ch4,
+  warn,
+  crit,
+  status,
+}: {
+  ch4: number;
+  warn: boolean;
+  crit: boolean;
+  status?: SensorQuality;
+}) {
+  const tone = status === "warming_up" ? "caution" : crit ? "hazard" : warn ? "caution" : "nominal";
+  const label = status === "warming_up" ? "WARMING UP" : status === "calibrating" ? "CALIBRATING" : crit ? "EXPLOSIVE" : warn ? "CAUTION" : "NOMINAL";
 
   return (
     <div className="border border-[var(--color-rule-2)] bg-[var(--color-paper-2)] p-[var(--space-xs)] flex flex-col justify-between">
-      <p className="label m-0">CH4 status</p>
+      <div className="flex justify-between items-center">
+        <p className="label m-0">CH4 status</p>
+        {status && status !== "ok" && (
+          <span className="px-1 text-[9px] font-bold bg-[var(--color-caution)] text-black uppercase animate-pulse">
+            {status}
+          </span>
+        )}
+      </div>
       <div className="my-[var(--space-2xs)] flex items-baseline justify-between">
-        <span className="num text-[length:var(--text-lg)] font-bold" style={{ color: crit ? "var(--color-hazard)" : warn ? "var(--color-caution)" : "var(--color-ink)" }}>
-          {ch4.toFixed(2)} ppm
+        <span
+          className="num text-[length:var(--text-lg)] font-bold"
+          style={{ color: crit ? "var(--color-hazard)" : warn ? "var(--color-caution)" : "var(--color-ink)" }}
+        >
+          {status === "warming_up" ? "WARMING UP..." : status === "calibrating" ? "CALIBRATING..." : `${ch4.toFixed(2)} ppm`}
         </span>
         <StatusLamp tone={tone} label={label} />
       </div>
@@ -287,7 +309,19 @@ function Ch4StatusCard({ ch4, warn, crit }: { ch4: number; warn: boolean; crit: 
 }
 
 /* Carbon monoxide card with trend line */
-function CoLevelCard({ co, min, max, avg }: { co: number; min: number; max: number; avg: number }) {
+function CoLevelCard({
+  co,
+  min,
+  max,
+  avg,
+  status,
+}: {
+  co: number;
+  min: number;
+  max: number;
+  avg: number;
+  status?: SensorQuality;
+}) {
   const range = max - min || 1;
   const pct = ((co - min) / range) * 100;
   const avgPct = ((avg - min) / range) * 100;
@@ -296,9 +330,17 @@ function CoLevelCard({ co, min, max, avg }: { co: number; min: number; max: numb
     <div className="border border-[var(--color-rule-2)] bg-[var(--color-paper-2)] p-[var(--space-xs)] flex flex-col justify-between">
       <div className="flex justify-between items-baseline">
         <p className="label m-0">CO level</p>
-        <span className="num text-[10px] text-[var(--color-ink-2)]">Avg {avg.toFixed(1)}</span>
+        {status && status !== "ok" ? (
+          <span className="px-1 text-[9px] font-bold bg-[var(--color-caution)] text-black uppercase animate-pulse">
+            {status}
+          </span>
+        ) : (
+          <span className="num text-[10px] text-[var(--color-ink-2)]">Avg {avg.toFixed(1)}</span>
+        )}
       </div>
-      <p className="num my-[var(--space-2xs)] text-[length:var(--text-lg)] font-bold">{co.toFixed(2)} ppm</p>
+      <p className="num my-[var(--space-2xs)] text-[length:var(--text-lg)] font-bold">
+        {status === "warming_up" ? "WARMING UP..." : status === "calibrating" ? "CALIBRATING..." : `${co.toFixed(2)} ppm`}
+      </p>
       <div className="relative h-[4px] border border-[var(--color-rule)] bg-[var(--color-paper)]">
         <div
           className="absolute top-0 h-full bg-[var(--color-accent)]"
