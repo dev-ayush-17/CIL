@@ -35,6 +35,10 @@
             </label>
         </div>
         <div id="ws-status" style="font-size: 11px; color: #737E88; text-align: center;">WS: Disconnected</div>
+        <div style="display: flex; gap: 4px; margin-top: 2px;">
+            <input type="text" id="wsIpInput" placeholder="ws://10.52.239.215/ws" style="background:#0B1520; color:#22D3EE; border:1px solid #183047; padding:4px; font-size:10px; flex:1; border-radius:3px; font-family:monospace;" />
+            <button style="padding:4px 8px; font-size:10px;" onclick="connectCustomWs()">Connect</button>
+        </div>
 
         <b style="text-align: center; margin-top: 5px; font-size: 13px; color: #F1F5F9;">Manual Control</b>
         <button onclick="playAnimation('forward')">Walk Forward</button>
@@ -439,10 +443,36 @@
         
         // WebSockets
         let ws = null;
-        function initWebSocket() {
+        window.connectCustomWs = function() {
+            const val = document.getElementById('wsIpInput').value.trim();
+            if (!val) return;
+            let url = val;
+            if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
+                url = 'ws://' + url;
+            }
+            if (!url.includes('/ws') && !url.includes(':')) {
+                url = url + '/ws';
+            }
+            localStorage.setItem('custom_ws_url', url);
+            initWebSocket(url);
+        };
+
+        function initWebSocket(overrideUrl) {
+            if (ws) {
+                try { ws.close(); } catch(e){}
+            }
+
+            const savedUrl = localStorage.getItem('custom_ws_url');
             const host = window.location.hostname || 'localhost';
-            const wsUrl = 'ws://' + host + ':8765';
             
+            // Priority: explicit parameter -> saved custom URL -> default fallback
+            let wsUrl = overrideUrl || savedUrl || ('ws://' + host + ':8765');
+            
+            const ipInput = document.getElementById('wsIpInput');
+            if (ipInput && !ipInput.value) {
+                ipInput.value = wsUrl;
+            }
+
             try {
                 ws = new WebSocket(wsUrl);
                 ws.onopen = () => {
@@ -452,7 +482,6 @@
                 ws.onclose = () => {
                     const statusEl = document.getElementById('ws-status');
                     if (statusEl) statusEl.innerText = 'WS: Disconnected';
-                    setTimeout(initWebSocket, 3000);
                 };
                 ws.onerror = () => {
                     if (ws) ws.close();
