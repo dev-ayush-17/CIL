@@ -49,6 +49,11 @@
         <div class="data-panel" id="telemetry-readout">
             Waiting for data...
         </div>
+
+        <b style="text-align: center; margin-top:5px; font-size: 13px; color: #F1F5F9;">Tile Log Inspector</b>
+        <div class="data-panel" id="tile-log-readout" style="color: #A7F3D0; min-height: 52px; max-height: 130px; overflow-y: auto;">
+            Click any colored tile to view stored log...
+        </div>
     </div>
 
     <script type="importmap">
@@ -225,8 +230,10 @@
             envGroup.add(arrowGroup);
         };
 
-        // Track which hex cells have already been colored
+        // Track which hex cells have already been colored and store logs
         const coloredHexes = new Map();
+        const tileLogs = new Map();
+        window.tileLogs = tileLogs;
 
         // 6. Data Processors & Clean Hex-Cell Grid Heatmap
         function processTelemetry(data) {
@@ -251,19 +258,13 @@
             else if (data.sensors.methane > 10 || data.sensors.co > 20) dangerLevel = 2;
             else if (data.sensors.methane > 5 || data.sensors.co > 10) dangerLevel = 1;
 
-            // let heatColor = 0x0139EC; // Safe Electric Blue
-            // if (dangerLevel === 1) heatColor = 0x118BF7; // Bright Blue
-            // if (dangerLevel === 2) heatColor = 0xF59E0B; // Warning Amber
-            // if (dangerLevel === 3) heatColor = 0xEF3340; // Danger Red
-            // if (dangerLevel === 4) heatColor = 0xB91C1C; // Critical Dark Red
-
             let heatColor = 0x22C55E; // Green for Safe
             if (dangerLevel === 1) heatColor = 0x84CC16; // Light Green/Yellow-Green
             if (dangerLevel === 2) heatColor = 0xF59E0B; // Warning Amber
             if (dangerLevel === 3) heatColor = 0xEF3340; // Danger Red
             if (dangerLevel === 4) heatColor = 0xB91C1C; // Critical Red
 
-            colorCurrentHexCell(data.pose, heatColor, dangerLevel > 0 ? 0.9 : 0.4);
+            colorCurrentHexCell(data.pose, heatColor, dangerLevel > 0 ? 0.9 : 0.4, data);
         }
 
         function plotWall(distance, angleOffset, pose) {
@@ -277,7 +278,7 @@
             wallInstanced.count++;
         }
 
-        function colorCurrentHexCell(pose, colorHex, opacity) {
+        function colorCurrentHexCell(pose, colorHex, opacity, fullData) {
             const r = Math.round(pose.z / (hexRadius * 3/2));
             const q = Math.round((pose.x / (hexRadius * Math.sqrt(3))) - (r / 2));
             const cellKey = `${q},${r}`;
@@ -304,9 +305,76 @@
             hexMesh.position.set(x, 0.002, z); 
             hexMesh.receiveShadow = true;
 
+            if (fullData) {
+                const logData = {
+                    cellKey: cellKey,
+                    q: q,
+                    r: r,
+                    x: x,
+                    z: z,
+                    timestamp: new Date().toLocaleTimeString(),
+                    pose: { x: fullData.pose.x, z: fullData.pose.z, yaw: fullData.pose.yaw },
+                    tof: fullData.tof ? { left: fullData.tof.left, right: fullData.tof.right } : { left: 0, right: 0 },
+                    sensors: fullData.sensors ? { ...fullData.sensors } : {}
+                };
+                hexMesh.userData = { cellKey: cellKey, log: logData };
+                tileLogs.set(cellKey, logData);
+            }
+
             envGroup.add(hexMesh);
             coloredHexes.set(cellKey, hexMesh);
         }
+
+        // Raycaster for inspecting tile log on click
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let pointerDownPos = { x: 0, y: 0 };
+        let selectedTileMesh = null;
+
+        window.addEventListener('pointerdown', (e) => {
+            pointerDownPos = { x: e.clientX, y: e.clientY };
+        });
+
+        window.addEventListener('pointerup', (e) => {
+            const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
+            if (dist > 6) return;
+
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(envGroup.children, true);
+
+            for (let hit of intersects) {
+                const mesh = hit.object;
+                if (mesh && mesh.userData && mesh.userData.log) {
+                    const log = mesh.userData.log;
+
+                    if (selectedTileMesh && selectedTileMesh.material && selectedTileMesh.userData.origEmissive !== undefined) {
+                        selectedTileMesh.material.emissive.setHex(selectedTileMesh.userData.origEmissive);
+                    }
+                    selectedTileMesh = mesh;
+                    mesh.userData.origEmissive = mesh.material.emissive.getHex();
+                    mesh.material.emissive.setHex(0x38BDF8);
+
+                    const logEl = document.getElementById('tile-log-readout');
+                    if (logEl) {
+                        logEl.innerHTML = `
+                            <b style="color:#F1F5F9;">TILE [${log.cellKey}] LOG</b><br>
+                            Time: ${log.timestamp}<br>
+                            Pos: X:${log.pose.x.toFixed(2)}m Z:${log.pose.z.toFixed(2)}m<br>
+                            <b>ToF:</b> L:${log.tof.left.toFixed(2)}m R:${log.tof.right.toFixed(2)}m<br>
+                            <b>Sensors:</b><br>
+                            CH4: ${log.sensors.methane !== undefined ? log.sensors.methane.toFixed(1) : '—'} ppm<br>
+                            CO: ${log.sensors.co !== undefined ? log.sensors.co.toFixed(1) : '—'} ppm<br>
+                            SO2: ${log.sensors.sulfur !== undefined ? log.sensors.sulfur.toFixed(1) : '—'}<br>
+                            CO2: ${log.sensors.co2 !== undefined ? log.sensors.co2.toFixed(1) : '—'} | O2: ${log.sensors.o2 !== undefined ? log.sensors.o2.toFixed(1) : '—'}%
+                        `;
+                    }
+                    break;
+                }
+            }
+        });
 
         function generateDummyData() {
             const isMoving = window.activeAnim !== 'stop';
