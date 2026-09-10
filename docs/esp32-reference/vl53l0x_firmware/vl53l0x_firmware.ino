@@ -164,7 +164,7 @@ void setup() {
 
   // 4. Start HTTP & WebSocket Server
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request.send(200, "text/plain", "UGV Robot ESP32 VL53L0X Telemetry Server Online!\nWebSocket endpoint active at /ws");
+    request->send(200, "text/plain", "UGV Robot ESP32 VL53L0X Telemetry Server Online!\nWebSocket endpoint active at /ws");
   });
 
   ws.onEvent(onWsEvent);
