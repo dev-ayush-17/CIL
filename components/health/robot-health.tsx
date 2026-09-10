@@ -9,13 +9,13 @@ import { useTelemetryContext } from "@/lib/telemetry/telemetry-context";
 export function RobotHealth() {
   const { frame, link, sendCommand } = useTelemetryContext();
   const { view, setView } = useView();
-  const mb = frame?.thermal.mainboard;
-  const estopActive = frame?.control.estopActive ?? false;
+  const mb = frame?.thermal?.mainboard;
+  const estopActive = frame?.control?.estopActive ?? false;
 
   return (
     <aside className="flex min-w-0 flex-col gap-[var(--space-sm)]">
       <Bezel title="Robot health" stamp={link === "online" ? "LIVE" : "HOLD"}>
-        <RadialGauge value={frame?.power.mainPct ?? 0} label="Pwr lvl" />
+        <RadialGauge value={frame?.power?.mainPct ?? 0} label="Pwr lvl" />
         <p className="num mt-[var(--space-2xs)] text-center text-[length:var(--text-xs)] text-[var(--color-ink-2)]">
           {frame?.power ? `${frame.power.voltageV.toFixed(1)} V  ·  ${frame.power.currentA.toFixed(1)} A` : "—"}
         </p>

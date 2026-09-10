@@ -65,12 +65,12 @@ export function AnalyticsView() {
         <Bezel title="Telemetry instruments" stamp="DIALS">
           <div className="grid grid-cols-3 gap-[var(--space-xs)] py-[var(--space-xs)]">
             <RadialGauge
-              value={frame?.power.batteryHealthPct ?? 0}
+              value={frame?.power?.batteryHealthPct ?? 0}
               label="Bat health"
               unit="%"
             />
             <RadialGauge
-              value={frame?.link.signalPct ?? 0}
+              value={frame?.link?.signalPct ?? 0}
               label="Com link"
               unit="%"
             />
@@ -79,13 +79,13 @@ export function AnalyticsView() {
 
           {/* Environmental Summary Cards Grid */}
           <div className="mt-[var(--space-sm)] grid grid-cols-1 gap-[var(--space-xs)] sm:grid-cols-2">
-            <Ch4StatusCard ch4={currentCh4} warn={isCh4Warn} crit={isCh4Crit} status={frame?.gas.ch4Status} />
+            <Ch4StatusCard ch4={currentCh4} warn={isCh4Warn} crit={isCh4Crit} status={frame?.gas?.ch4Status} />
             <CoLevelCard
               co={currentCo}
               min={coStats.minC}
               max={coStats.maxC}
               avg={coStats.avgC}
-              status={frame?.gas.coStatus}
+              status={frame?.gas?.coStatus}
             />
             <ParticulatesCard pm1={pm1} pm25={pm25} pm10={pm10} />
             <AmbientClimateCard temp={temp} humidity={humidity} />
