@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { StatusLamp } from "@/components/ui/marks";
 import { useTelemetryContext } from "@/lib/telemetry/telemetry-context";
+import { useView } from "@/components/shell/view-context";
 
 export function ConsoleHeader() {
   const { frame, link } = useTelemetryContext();
+  const { view, setView } = useView();
   const [clock, setClock] = useState(() => new Date());
 
   useEffect(() => {
@@ -37,23 +39,51 @@ export function ConsoleHeader() {
   const utc = clock.toISOString().slice(11, 19);
 
   return (
-    <header className="sticky top-0 z-[var(--z-header)] grid grid-cols-1 items-end gap-[var(--space-sm)] border-b-[2px] border-[var(--color-ink)] bg-[var(--color-paper)] px-[var(--page-gutter)] py-[var(--space-sm)] md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.4fr)_minmax(0,1.1fr)]">
-      <div className="min-w-0">
+    <header className="sticky top-0 z-[var(--z-header)] grid grid-cols-1 items-center gap-[var(--space-sm)] border-b-[2px] border-[var(--color-ink)] bg-[var(--color-paper)] px-[var(--page-gutter)] py-[var(--space-sm)] md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+      <div className="min-w-0 flex flex-col justify-center">
         <p className="label m-0">Coal India Limited</p>
         <p className="font-display m-0 text-[length:var(--text-xl)] font-bold uppercase leading-none tracking-[0.08em] [overflow-wrap:anywhere]">
           Tunnel Assist Console
         </p>
       </div>
-      <div className="min-w-0 text-left md:text-center">
-        <p className="label m-0">Active mission</p>
-        <p className="font-display m-0 text-[length:var(--text-lg)] font-bold tracking-[0.18em]">
-          {frame?.mission.id ?? "—"}
-        </p>
-        <p className="num m-0 text-[length:var(--text-xs)] text-[var(--color-ink-2)]">
-          {frame?.mission.phase.toUpperCase() ?? "NO FRAME"} · {frame?.mission.sector ?? "—"}
-        </p>
-      </div>
-      <div className="flex min-w-0 flex-wrap items-end justify-start gap-x-[var(--space-lg)] gap-y-[var(--space-xs)] md:justify-end">
+      
+      <nav className="flex items-center gap-[2px] bg-[#070D18] p-1 border border-[var(--color-rule)] rounded-md font-mono text-[11px]" aria-label="Header navigation">
+        <button
+          type="button"
+          className={`px-3 py-1.5 font-bold uppercase tracking-wider transition-all duration-200 rounded ${
+            view === "dashboard"
+              ? "bg-[#3B82F6] text-white shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+              : "text-[var(--color-ink-2)] hover:text-white hover:bg-white/5"
+          }`}
+          onClick={() => setView("dashboard")}
+        >
+          Dashboard
+        </button>
+        <button
+          type="button"
+          className={`px-3 py-1.5 font-bold uppercase tracking-wider transition-all duration-200 rounded ${
+            view === "twin"
+              ? "bg-[#3B82F6] text-white shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+              : "text-[var(--color-ink-2)] hover:text-white hover:bg-white/5"
+          }`}
+          onClick={() => setView("twin")}
+        >
+          Digital Twin
+        </button>
+        <button
+          type="button"
+          className={`px-3 py-1.5 font-bold uppercase tracking-wider transition-all duration-200 rounded ${
+            view === "control"
+              ? "bg-[#3B82F6] text-white shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+              : "text-[var(--color-ink-2)] hover:text-white hover:bg-white/5"
+          }`}
+          onClick={() => setView("control")}
+        >
+          Robot Control
+        </button>
+      </nav>
+
+      <div className="flex min-w-0 flex-wrap items-center justify-start gap-x-[var(--space-md)] gap-y-[var(--space-xs)] md:justify-end">
         <div className={isStale ? "animate-pulse" : ""}>
           <StatusLamp tone={status.tone} label={status.label} />
         </div>
