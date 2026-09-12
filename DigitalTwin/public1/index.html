@@ -810,116 +810,45 @@
             };
         }
         
-        // ──────── PostMessage Bridge from Dashboard ───────────────────────────
-        window.addEventListener('message', (event) => {
-            if (!event.data || typeof event.data !== 'object') return;
-            const { type, dir, mode } = event.data;
+        // WebSockets
+        const ws = new WebSocket('ws://localhost:8765');
+        ws.onopen = () => document.getElementById('ws-status').innerText = 'WS: Connected';
+        ws.onclose = () => document.getElementById('ws-status').innerText = 'WS: Disconnected';
+        ws.onmessage = (event) => {
+            if (!window.isLiveMode) return;
+            const data = JSON.parse(event.data);
+            
+            const oldX = robotGroup.position.x;
+            const oldZ = robotGroup.position.z;
+            const oldYaw = robotGroup.rotation.y;
+            
+            robotGroup.position.set(data.pose.x, 0, data.pose.z);
+            robotGroup.rotation.y = data.pose.yaw;
+            
+            camera.position.x += (robotGroup.position.x - oldX);
+            camera.position.z += (robotGroup.position.z - oldZ);
 
-            if (type === 'DRIVE_COMMAND' && dir) {
-                if (typeof window.playAnimation === 'function') {
-                    window.playAnimation(dir);
-                }
-            } else if (type === 'SET_LOCOMOTION_MODE' && mode) {
-                if (typeof window.setLocomotionMode === 'function') {
-                    window.setLocomotionMode(mode);
+            const dx = data.pose.x - oldX;
+            const dz = data.pose.z - oldZ;
+            const dyaw = data.pose.yaw - oldYaw;
+            
+            // Forward movement projected onto robot heading in Three.js coordinates
+            const dForward = dx * Math.sin(data.pose.yaw) + dz * Math.cos(data.pose.yaw);
+
+            if (window.locomotionMode === 'drive') {
+                updateWheels(dForward, dyaw);
+                resetWalkingJoints();
+            } else {
+                // Walk mode in live data: advance walking gait keyframes when moving
+                const movedDist = Math.hypot(dx, dz);
+                if (movedDist > 0.002 || Math.abs(dyaw) > 0.01) {
+                    const anim = Math.abs(dyaw) > 0.03 ? (dyaw > 0 ? 'left' : 'right') : (dForward >= 0 ? 'forward' : 'backward');
+                    stepWalkAnimation(anim);
                 }
             }
-        });
-
-        // ──────── Multi-ESP WebSockets Support ────────────────────────────────
-        const urlParams = new URLSearchParams(window.location.search);
-        const host = window.location.hostname || 'localhost';
-        const cmdWsUrl = urlParams.get('cmdWs') || 'ws://' + host + ':8765';
-        const tofWsUrl = urlParams.get('tofWs') || 'ws://' + host + ':8766';
-
-        let wsCmd = null;
-        function initCmdWebSocket() {
-            try {
-                wsCmd = new WebSocket(cmdWsUrl);
-                wsCmd.onopen = () => {
-                    const el = document.getElementById('ws-status');
-                    if (el) el.innerText = 'WS: Connected';
-                };
-                wsCmd.onclose = () => {
-                    const el = document.getElementById('ws-status');
-                    if (el) el.innerText = 'WS: Disconnected';
-                    setTimeout(initCmdWebSocket, 3000);
-                };
-                wsCmd.onmessage = (event) => {
-                    if (!window.isLiveMode) return;
-                    try {
-                        const raw = JSON.parse(event.data);
-                        const data = raw.frame ? raw.frame : raw;
-                        if (!data || !data.pose) return;
-
-                        const oldX = robotGroup.position.x;
-                        const oldZ = robotGroup.position.z;
-                        const oldYaw = robotGroup.rotation.y;
-                        
-                        robotGroup.position.set(data.pose.x, 0, data.pose.z);
-                        robotGroup.rotation.y = data.pose.yaw;
-                        
-                        camera.position.x += (robotGroup.position.x - oldX);
-                        camera.position.z += (robotGroup.position.z - oldZ);
-
-                        const dx = data.pose.x - oldX;
-                        const dz = data.pose.z - oldZ;
-                        const dyaw = data.pose.yaw - oldYaw;
-                        
-                        const dForward = dx * Math.sin(data.pose.yaw) + dz * Math.cos(data.pose.yaw);
-
-                        if (window.locomotionMode === 'drive') {
-                            updateWheels(dForward, dyaw);
-                            resetWalkingJoints();
-                        } else {
-                            const movedDist = Math.hypot(dx, dz);
-                            if (movedDist > 0.002 || Math.abs(dyaw) > 0.01) {
-                                const anim = Math.abs(dyaw) > 0.03 ? (dyaw > 0 ? 'left' : 'right') : (dForward >= 0 ? 'forward' : 'backward');
-                                stepWalkAnimation(anim);
-                            }
-                        }
-                    } catch (e){}
-                };
-            } catch(e){}
-        }
-        initCmdWebSocket();
-
-        let wsTof = null;
-        function initTofWebSocket() {
-            try {
-                wsTof = new WebSocket(tofWsUrl);
-                wsTof.onmessage = (event) => {
-                    try {
-                        const raw = JSON.parse(event.data);
-                        const data = raw.frame ? raw.frame : raw;
-                        const tofLeft = data.tof?.left ?? data.lidar?.leftM ?? 1.2;
-                        const tofRight = data.tof?.right ?? data.lidar?.rightM ?? 1.2;
-
-                        const frameData = {
-                            pose: {
-                                x: data.pose?.x ?? robotGroup.position.x,
-                                z: data.pose?.z ?? robotGroup.position.z,
-                                yaw: data.pose?.yaw ?? robotGroup.rotation.y,
-                            },
-                            tof: { left: tofLeft, right: tofRight },
-                            sensors: {
-                                pm1: data.sensors?.pm1 ?? data.air?.pm1 ?? 10,
-                                pm2_5: data.sensors?.pm2_5 ?? data.air?.pm25 ?? 25,
-                                pm10: data.sensors?.pm10 ?? data.air?.pm10 ?? 35,
-                                co: data.sensors?.co ?? data.gas?.coPpm ?? 0,
-                                h2s: data.sensors?.h2s ?? 0,
-                                o2: data.sensors?.o2 ?? 20.9,
-                                temp: data.sensors?.temp ?? data.thermal?.ambientC ?? 24,
-                                humidity: data.sensors?.humidity ?? data.thermal?.humidityPct ?? 50,
-                            }
-                        };
-                        processTelemetry(frameData);
-                    } catch(e){}
-                };
-                wsTof.onclose = () => setTimeout(initTofWebSocket, 3000);
-            } catch(e){}
-        }
-        initTofWebSocket();
+            
+            processTelemetry(data);
+        };
 
         const kf = {
             forward: [ { FrontR: LIFT, BackL: LIFT, FrontL: 0, BackR: 0, stubsliderbottom: SLIDE, stubsliderupper: 0 }, { FrontR: 0, BackL: 0, FrontL: LIFT, BackR: LIFT, stubsliderbottom: -SLIDE, stubsliderupper: 0 } ],

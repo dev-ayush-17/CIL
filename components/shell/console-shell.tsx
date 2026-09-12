@@ -29,11 +29,17 @@ export function ConsoleShell() {
   return (
     <div className="flex min-h-dvh flex-col">
       <ConsoleHeader />
-      <div className="grid min-w-0 flex-1 grid-cols-1 gap-[var(--space-sm)] p-[var(--page-gutter)] lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)_minmax(0,18rem)]">
-        <RobotHealth />
-        <main className="min-w-0">{mainContent}</main>
-        <EnvironmentPanel />
-      </div>
+      {view === "twin" ? (
+        <div className="flex min-w-0 flex-1 flex-col p-[var(--page-gutter)]">
+          <main className="min-w-0 flex-1">{mainContent}</main>
+        </div>
+      ) : (
+        <div className="grid min-w-0 flex-1 grid-cols-1 gap-[var(--space-sm)] p-[var(--page-gutter)] lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)_minmax(0,18rem)]">
+          <RobotHealth />
+          <main className="min-w-0">{mainContent}</main>
+          <EnvironmentPanel />
+        </div>
+      )}
       <LogTicker />
     </div>
   );
