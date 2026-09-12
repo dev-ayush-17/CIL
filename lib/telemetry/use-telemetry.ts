@@ -32,8 +32,25 @@ export function useTelemetry() {
     console.log("🔥 sendCommand called with:", command);
     console.log("🔥 current ws object:", ws, "readyState:", ws?.readyState);
 
+    // Forward drive and mode commands directly to Digital Twin iframe for zero-latency 3D locomotion
+    if (typeof window !== "undefined") {
+      const twinIframe = document.querySelector("iframe[title='Digital Twin 3D View']") as HTMLIFrameElement;
+      if (twinIframe && twinIframe.contentWindow) {
+        if (command.type === "set_mode") {
+          twinIframe.contentWindow.postMessage({ type: "SET_LOCOMOTION_MODE", mode: command.mode }, "*");
+        } else if (command.type === "drive" || command.type === "walk") {
+          let dir: "forward" | "backward" | "left" | "right" | "stop" = "stop";
+          if (command.dir === "fwd") dir = "forward";
+          else if (command.dir === "back") dir = "backward";
+          else if (command.dir === "left") dir = "left";
+          else if (command.dir === "right") dir = "right";
+          twinIframe.contentWindow.postMessage({ type: "DRIVE_COMMAND", dir }, "*");
+        }
+      }
+    }
+
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      console.error("❌ sendCommand aborted. WebSocket is null or not OPEN!");
+      console.warn("⚠️ sendCommand sent to Digital Twin iframe, but WS is not OPEN (simulating local movement).");
       return null;
     }
     
