@@ -264,7 +264,95 @@ export function useTelemetry() {
     };
   }, [url]);
 
-  return { frame, history, link, sendCommand, lastAck, url, pendingCommands };
+  const [nodesDropped, setNodesDropped] = useState<number>(0);
+  const [nodeDropTime, setNodeDropTime] = useState<number | null>(null);
+
+  const dropNode = useCallback(() => {
+    const newCount = nodesDropped + 1;
+    const now = Date.now();
+    setNodesDropped(newCount);
+    setNodeDropTime(now);
+
+    const ts = new Date().toISOString();
+    const logMsg = `MESH NODE #${newCount} DROPPED AT CURRENT POSITION. RE-CALIBRATING MESH TOPOLOGY...`;
+
+    setFrame((curr) => {
+      if (!curr) return null;
+      return {
+        ...curr,
+        link: {
+          ...curr.link,
+          nodesDropped: newCount,
+          signalPct: 50,
+          snrDbm: -78,
+        },
+        log: [{ ts, source: "COM", message: logMsg }, ...curr.log.slice(0, 23)],
+        alerts: [
+          {
+            id: `node-drop-${now}`,
+            ts,
+            severity: "info",
+            code: "NODE_RELAY",
+            message: `Mesh Relay Node #${newCount} dropped. Signal boost pending (10s)...`,
+          },
+          ...curr.alerts.slice(0, 5),
+        ],
+      };
+    });
+
+    // Notify twin iframe if active
+    if (typeof window !== "undefined") {
+      const twinIframe = document.querySelector("iframe[title='Digital Twin 3D View']") as HTMLIFrameElement;
+      if (twinIframe && twinIframe.contentWindow) {
+        twinIframe.contentWindow.postMessage({ type: "DROP_NODE", nodeIndex: newCount }, "*");
+      }
+    }
+
+    return newCount;
+  }, [nodesDropped]);
+
+  // Signal Strength Dynamics Simulation Loop (Faked signal strength with 10s post-node drop boost)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrame((curr) => {
+        if (!curr) return null;
+
+        let sigPct = curr.link.signalPct;
+        let snr = curr.link.snrDbm;
+
+        if (nodeDropTime !== null) {
+          const elapsedSec = (Date.now() - nodeDropTime) / 1000;
+          if (elapsedSec < 10) {
+            // Relinking phase during first 10 seconds post drop
+            sigPct = 48 + Math.floor(Math.random() * 8);
+            snr = -75 + Math.floor(Math.random() * 4);
+          } else {
+            // Rapid Boost Phase 10s post node drop
+            sigPct = 95 + Math.floor(Math.random() * 4); // 95% - 98%
+            snr = 20 + Math.floor(Math.random() * 5);   // +20 to +24 dBm
+          }
+        } else {
+          // Normal idle fluctuation before any node drop
+          sigPct = 78 + Math.floor(Math.random() * 6);
+          snr = -62 + Math.floor(Math.random() * 5);
+        }
+
+        return {
+          ...curr,
+          link: {
+            ...curr.link,
+            nodesDropped: nodesDropped > 0 ? nodesDropped : curr.link.nodesDropped,
+            signalPct: sigPct,
+            snrDbm: snr,
+          },
+        };
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [nodeDropTime, nodesDropped]);
+
+  return { frame, history, link, sendCommand, lastAck, url, pendingCommands, dropNode, nodesDropped };
 }
 
 function keyInDict<T>(obj: Record<string, T>, key: string): boolean {

@@ -52,7 +52,7 @@ function useHoldCommand(
 }
 
 export function RobotControl() {
-  const { frame, sendCommand, link, pendingCommands } = useTelemetryContext();
+  const { frame, sendCommand, link, pendingCommands, dropNode } = useTelemetryContext();
   const c = frame?.control;
   const estopActive = c?.estopActive ?? false;
   const disabled = link !== "online" || estopActive;
@@ -134,7 +134,7 @@ export function RobotControl() {
       <div className="grid min-w-0 grid-cols-1 gap-[var(--space-sm)] xl:grid-cols-2 2xl:grid-cols-4">
         {/* Op Modes */}
         <Bezel title="Op modes" stamp={modeUnconfirmed ? "WAITING FOR ACK ⚠️" : undefined}>
-          <div className="grid grid-cols-2">
+          <div className="grid grid-cols-2 gap-[var(--space-2xs)]">
             <button
               type="button"
               className={`latch ${modeVal === "drive" ? "is-on" : ""}`}
@@ -154,6 +154,13 @@ export function RobotControl() {
               Walk mode
             </button>
           </div>
+          <button
+            type="button"
+            className="w-full mt-[var(--space-xs)] py-1.5 bg-[var(--color-accent,#3B82F6)] text-white hover:bg-blue-600 font-mono text-[11px] font-bold tracking-wider rounded uppercase transition-colors"
+            onClick={() => dropNode()}
+          >
+            📍 Drop Mesh Node ({frame?.link?.nodesDropped ?? 0}/10)
+          </button>
         </Bezel>
 
         {/* Posture Sliders */}
