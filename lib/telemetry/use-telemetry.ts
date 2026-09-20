@@ -254,7 +254,7 @@ export function useTelemetry() {
     };
 
     connect();
-    
+
     return () => {
       stopped = true;
       if (timer) clearTimeout(timer);
@@ -263,6 +263,62 @@ export function useTelemetry() {
       wsRef.current?.close();
     };
   }, [url]);
+
+  // Secondary WebSocket connection for ESP3 (VL53L0X ToF Sensors: ws://192.168.1.103:8766/ws)
+  useEffect(() => {
+    const rawTofUrl = process.env.NEXT_PUBLIC_TOF_WS_URL ?? "ws://192.168.1.103:8766/ws";
+    const tofUrl = rawTofUrl.trim().replace(/^["']|["']$/g, "");
+    let tofWs: WebSocket | null = null;
+    let tofTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const connectTof = () => {
+      try {
+        tofWs = new WebSocket(tofUrl);
+        tofWs.onopen = () => {
+          console.log("✅ ToF Sensor WebSocket Connected to ESP3 at:", tofUrl);
+          setLink("online");
+        };
+
+        tofWs.onmessage = (ev) => {
+          lastReceivedRef.current = Date.now();
+          setLink("online");
+          try {
+            const raw = JSON.parse(String(ev.data));
+            const data = raw.frame ? raw.frame : raw;
+            const leftM = data.tof?.left ?? data.lidar?.leftM ?? 1.8;
+            const rightM = data.tof?.right ?? data.lidar?.rightM ?? 1.8;
+
+            setFrame((curr) => {
+              if (!curr) return null;
+              return {
+                ...curr,
+                link: { ...curr.link, quality: "online" },
+                lidar: { leftM, rightM },
+              };
+            });
+          } catch {
+            /* ignore malformed frames */
+          }
+        };
+
+        tofWs.onclose = () => {
+          tofTimer = setTimeout(connectTof, 3000);
+        };
+        tofWs.onerror = () => {
+          tofWs?.close();
+        };
+      } catch {
+        tofTimer = setTimeout(connectTof, 5000);
+      }
+    };
+
+    connectTof();
+
+    return () => {
+      if (tofTimer) clearTimeout(tofTimer);
+      tofWs?.close();
+    };
+  }, []);
 
   const [nodesDropped, setNodesDropped] = useState<number>(0);
   const [nodeDropTime, setNodeDropTime] = useState<number | null>(null);

@@ -31,8 +31,8 @@
 #include <ArduinoJson.h>
 
 // WiFi Configuration (Router / Mobile Hotspot credentials)
-const char *ssid = "CoalIndia_UGV_Net";
-const char *password = "CIL_Tunnel_2026";
+const char *ssid = "Phone 3";
+const char *password = "uvsingh987";
 
 // Static IP Configuration for ESP3 (ToF Distance Sensor Module)
 IPAddress local_IP(192, 168, 1, 103);
