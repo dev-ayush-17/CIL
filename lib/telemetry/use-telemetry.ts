@@ -289,10 +289,17 @@ export function useTelemetry() {
             const rightM = data.tof?.right ?? data.lidar?.rightM ?? 1.8;
 
             setFrame((curr) => {
-              if (!curr) return null;
+              const base = curr ?? mapInboundPayload({});
               return {
-                ...curr,
-                link: { ...curr.link, quality: "online" },
+                ...base,
+                mission: {
+                  ...base.mission,
+                  robotOnline: true,
+                },
+                link: {
+                  ...base.link,
+                  quality: "online",
+                },
                 lidar: { leftM, rightM },
               };
             });

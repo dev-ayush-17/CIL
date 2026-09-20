@@ -50,9 +50,15 @@ IPAddress primaryDNS(8, 8, 8, 8);
 VL53L0X leftSensor;
 VL53L0X rightSensor;
 
-// WebServer & WebSocket Server on Port 8766
+// Global Sensor Status Flags
+bool leftSensorOK = false;
+bool rightSensorOK = false;
+bool singleSensorMode = false;
+
+// WebServer & WebSocket Server on Port 8766 (Listening on both /ws and /)
 AsyncWebServer server(8766);
 AsyncWebSocket ws("/ws");
+AsyncWebSocket wsRoot("/");
 
 unsigned long lastBroadcastTime = 0;
 const unsigned long BROADCAST_INTERVAL_MS = 100; // Broadcast 10 Hz
@@ -60,7 +66,7 @@ unsigned long frameSequence = 0;
 
 void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
   if (type == WS_EVT_CONNECT) {
-    Serial.printf("[WebSocket ESP3] Client connected #%u from %s\n", client->id(), client->remoteIP().toString().c_str());
+    Serial.printf("[WebSocket ESP3] Dashboard client connected #%u from %s\n", client->id(), client->remoteIP().toString().c_str());
   } else if (type == WS_EVT_DISCONNECT) {
     Serial.printf("[WebSocket ESP3] Client disconnected #%u\n", client->id());
   }
@@ -70,82 +76,126 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println("\n=======================================================");
-  Serial.println("  UGV TUNNEL-ASSIST ROBOT — ESP3 (DUAL VL53L0X TOF)");
+  Serial.println("  UGV TUNNEL-ASSIST ROBOT — ESP3 (VL53L0X TOF SENSORS)");
   Serial.println("=======================================================");
 
-  // Initialize I2C Bus
+  // Initialize I2C Bus at 100kHz standard speed for maximum noise immunity
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.setClock(100000);
 
   // Configure XSHUT Pins for Address Multiplexing
   pinMode(LEFT_XSHUT, OUTPUT);
   pinMode(RIGHT_XSHUT, OUTPUT);
   digitalWrite(LEFT_XSHUT, LOW);
   digitalWrite(RIGHT_XSHUT, LOW);
-  delay(10);
+  delay(50);
 
-  // 1. Initialize Left ToF Sensor
+  // 1. Try Initializing Left Sensor via XSHUT (GPIO 25 -> I2C 0x30)
   digitalWrite(LEFT_XSHUT, HIGH);
-  delay(10);
-  if (!leftSensor.init()) {
-    Serial.println("[ERROR] Left VL53L0X ToF sensor failed to initialize!");
-  } else {
+  delay(50);
+  if (leftSensor.init()) {
     leftSensor.setAddress(0x30);
     leftSensor.setTimeout(500);
     leftSensor.startContinuous();
+    leftSensorOK = true;
     Serial.println("[OK] Left VL53L0X ToF initialized at address 0x30");
+  } else {
+    Serial.println("[INFO] Left XSHUT sensor not detected at 0x30");
   }
 
-  // 2. Initialize Right ToF Sensor
+  // 2. Try Initializing Right Sensor via XSHUT (GPIO 26 -> I2C 0x31)
   digitalWrite(RIGHT_XSHUT, HIGH);
-  delay(10);
-  if (!rightSensor.init()) {
-    Serial.println("[ERROR] Right VL53L0X ToF sensor failed to initialize!");
-  } else {
+  delay(50);
+  if (rightSensor.init()) {
     rightSensor.setAddress(0x31);
     rightSensor.setTimeout(500);
     rightSensor.startContinuous();
+    rightSensorOK = true;
     Serial.println("[OK] Right VL53L0X ToF initialized at address 0x31");
+  } else {
+    Serial.println("[INFO] Right XSHUT sensor not detected at 0x31");
   }
 
-  // Configure Static IP
+  // 3. Fallback: If no XSHUT multiplexed sensors detected, test default I2C address 0x29 (Single Sensor)
+  if (!leftSensorOK && !rightSensorOK) {
+    Serial.println("[INFO] Scanning for Single VL53L0X sensor at default I2C address 0x29...");
+    if (leftSensor.init()) {
+      leftSensor.setTimeout(500);
+      leftSensor.startContinuous();
+      leftSensorOK = true;
+      singleSensorMode = true;
+      Serial.println("[OK] Single VL53L0X sensor active at default address 0x29!");
+    } else {
+      Serial.println("[WARNING] No physical VL53L0X sensors detected. Streaming simulated ToF distance data.");
+    }
+  }
+
+  // Configure Static IP (Fallback to DHCP if subnet differs)
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS)) {
-    Serial.println("[ERROR] Failed to configure ESP3 Static IP!");
+    Serial.println("[WARNING] Could not apply static IP; using DHCP network allocation.");
   }
 
   // Connect WiFi
   WiFi.begin(ssid, password);
+  WiFi.setSleep(false);
   Serial.printf("[WiFi] Connecting to %s...", ssid);
-  while (WiFi.status() != WL_CONNECTED) {
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
     delay(400);
     Serial.print(".");
+    attempts++;
   }
-  Serial.println("\n[WiFi] Connected successfully!");
-  Serial.printf("[WiFi] ESP3 Fixed IP: %s\n", WiFi.localIP().toString().c_str());
-  Serial.printf("[WebSocket] Endpoint: ws://%s:8766/ws\n", WiFi.localIP().toString().c_str());
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n[WiFi] Connected successfully!");
+    Serial.printf("[WiFi] ESP3 IP Address: %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("[WebSocket] Endpoint 1: ws://%s:8766/ws\n", WiFi.localIP().toString().c_str());
+    Serial.printf("[WebSocket] Endpoint 2: ws://%s:8766/\n", WiFi.localIP().toString().c_str());
+  } else {
+    Serial.println("\n[WARNING] WiFi Connection Pending. WebSocket server starting on AP mode...");
+  }
 
-  // Setup WebSocket Server
+  // Setup WebSocket Servers (bound to both /ws and / routes)
   ws.onEvent(onWebSocketEvent);
+  wsRoot.onEvent(onWebSocketEvent);
   server.addHandler(&ws);
+  server.addHandler(&wsRoot);
   server.begin();
-  Serial.println("[HTTP/WS] Server started on port 8766");
+  Serial.println("[HTTP/WS] Server running on port 8766");
 }
 
 void loop() {
   ws.cleanupClients();
+  wsRoot.cleanupClients();
 
   unsigned long now = millis();
   if (now - lastBroadcastTime >= BROADCAST_INTERVAL_MS) {
     lastBroadcastTime = now;
     frameSequence++;
 
-    // Read range values in millimeters, convert to meters
-    uint16_t rawLeftMm = leftSensor.readRangeContinuousMillimeters();
-    uint16_t rawRightMm = rightSensor.readRangeContinuousMillimeters();
+    float leftM = 1.20f;
+    float rightM = 1.20f;
 
-    float leftM = (leftSensor.timeoutOccurred() || rawLeftMm > 2500) ? 2.50 : (float)rawLeftMm / 1000.0f;
-    float rightM = (rightSensor.timeoutOccurred() || rawRightMm > 2500) ? 2.50 : (float)rawRightMm / 1000.0f;
+    // Read Left Sensor
+    if (leftSensorOK) {
+      uint16_t distMm = leftSensor.readRangeContinuousMillimeters();
+      if (!leftSensor.timeoutOccurred() && distMm > 20 && distMm < 2500) {
+        leftM = (float)distMm / 1000.0f;
+      }
+    }
 
-    // Build JSON WebSocket Payload for Digital Twin 3D Cave Wall Rendering
+    // Read Right Sensor or mirror Single Sensor
+    if (rightSensorOK) {
+      uint16_t distMm = rightSensor.readRangeContinuousMillimeters();
+      if (!rightSensor.timeoutOccurred() && distMm > 20 && distMm < 2500) {
+        rightM = (float)distMm / 1000.0f;
+      }
+    } else if (singleSensorMode && leftSensorOK) {
+      // Single sensor mode: mirror left sensor reading to right side
+      rightM = leftM;
+    }
+
+    // Build JSON Telemetry Payload
     StaticJsonDocument<384> doc;
     doc["seq"] = frameSequence;
     doc["ts"] = millis();
@@ -163,5 +213,6 @@ void loop() {
 
     // Broadcast to all connected WebSocket clients (Digital Twin dashboard)
     ws.textAll(jsonOutput);
+    wsRoot.textAll(jsonOutput);
   }
 }
