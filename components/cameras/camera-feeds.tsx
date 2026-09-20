@@ -42,20 +42,34 @@ function FeedSlot({
   active: boolean;
   streamUrl: string;
 }) {
+  const activeUrl = streamUrl || (mode === "rgb" ? (process.env.NEXT_PUBLIC_CAMERA_WS_URL ? "http://192.168.1.102:81/stream" : "") : "");
+
   return (
     <Bezel
       title={title}
       stamp={`${meta?.recording ? "REC" : "STBY"}  ${meta?.fps ?? "—"} FPS  ${meta?.resolution ?? "—"}`}
     >
       <div className="relative aspect-video min-w-0 overflow-hidden border border-[var(--color-rule)] bg-[var(--color-paper)]">
-        {streamUrl ? (
-          <video className="h-full w-full object-cover" src={streamUrl} autoPlay muted playsInline />
+        {activeUrl ? (
+          activeUrl.endsWith(".mp4") || activeUrl.startsWith("blob:") ? (
+            <video className="h-full w-full object-cover" src={activeUrl} autoPlay muted playsInline />
+          ) : (
+            <img
+              className="h-full w-full object-cover"
+              src={activeUrl}
+              alt={`${title} live stream feed`}
+              onError={(e) => {
+                // If stream fails to connect, fallback gracefully to animated canvas view
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          )
         ) : (
           <MockTunnel mode={mode} fps={meta?.fps ?? 24} />
         )}
         <div className="pointer-events-none absolute inset-0 border border-[transparent] bg-[linear-gradient(180deg,transparent_70%,oklch(12%_0.01_72_/_0.45))]" />
         <p className="absolute left-[var(--space-xs)] top-[var(--space-xs)] label" style={{ color: active ? "var(--color-accent)" : "var(--color-muted)" }}>
-          {mode === "rgb" ? "CAM_RGB_FWD" : "CAM_THM_FWD"}
+          {mode === "rgb" ? "CAM_RGB_FWD (192.168.1.102)" : "CAM_THM_FWD"}
         </p>
         {meta?.recording ? (
           <p className="absolute right-[var(--space-xs)] top-[var(--space-xs)] num text-[length:var(--text-xs)] text-[var(--color-hazard)]">
