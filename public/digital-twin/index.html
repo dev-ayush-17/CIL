@@ -162,6 +162,18 @@
         </div>
         <div id="ws-status" style="font-size: 11px; color: #64748B; text-align: center; margin-top: -4px;">WS: Disconnected</div>
 
+        <div id="ultrasonic-status-badge" style="font-size: 11px; font-weight: 600; color: #EF4444; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; padding: 5px 8px; text-align: center; margin-top: 4px;">
+            ESP3 Ultrasonic: Connecting...
+        </div>
+        <div style="display: flex; gap: 4px; margin-bottom: 4px;">
+            <input type="text" id="ultrasonic-ip-input" value="10.232.110.101" placeholder="ESP3 Ultrasonic IP (e.g. 10.232.110.101)" style="flex: 1; min-width: 0; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.12); color: #38BDF8; font-family: monospace; font-size: 11px; padding: 4px 6px; border-radius: 6px;" />
+            <button onclick="reconnectUltrasonicCustomIp()" style="padding: 4px 8px; font-size: 10px; font-weight: 600;">Connect</button>
+        </div>
+
+        <div id="live-mode-banner" style="display: none; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 8px; padding: 8px; font-size: 11px; color: #93C5FD; text-align: center; margin-top: 4px; font-weight: 600; line-height: 1.4;">
+            📱 LIVE MODE ACTIVE — CONTROLS ARE STATIC<br/><span style="font-size: 10px; opacity: 0.8; font-weight: 400;">(CONTROLLED VIA MOBILE PHONE ESP SITE)</span>
+        </div>
+
         <div class="section-title">Locomotion Mode</div>
         <div class="locomotion-modes">
             <button id="btn-mode-walk" class="mode-btn active" onclick="setLocomotionMode('walk')">Walk Mode</button>
@@ -277,13 +289,13 @@
         // 4. Cave Walls
         const envGroup = new THREE.Group();
         scene.add(envGroup);
-        const maxWalls = 10000;
+        const maxWalls = 15000;
         const wallMat = new THREE.MeshStandardMaterial({ 
             color: 0x4C546F, 
             roughness: 0.7,
             metalness: 0.2
         });
-        const wallInstanced = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.2, 0.05), wallMat, maxWalls);
+        const wallInstanced = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.4, 0.1), wallMat, maxWalls);
         wallInstanced.castShadow = true;
         wallInstanced.receiveShadow = true;
         wallInstanced.count = 0;
@@ -516,19 +528,22 @@
 
         window.toggleMode = function() {
             window.isLiveMode = document.getElementById('modeSwitch').checked;
-            window.playAnimation('stop');
+            window.playAnimation('stop', true);
             
-            // Disable manual action buttons in live mode
+            // In Live Mode, manual control buttons on Digital Twin interface are completely static & disabled
             const manualBtns = document.querySelectorAll('#controls button:not(.marker)');
             manualBtns.forEach(btn => {
-                if (btn.id !== 'btn-mode-walk' && btn.id !== 'btn-mode-drive') {
-                    btn.disabled = window.isLiveMode;
-                }
+                btn.disabled = window.isLiveMode;
             });
+
+            const liveBanner = document.getElementById('live-mode-banner');
+            if (liveBanner) {
+                liveBanner.style.display = window.isLiveMode ? 'block' : 'none';
+            }
         };
 
-        window.playAnimation = function(animName) {
-            if (window.isLiveMode) return;
+        window.playAnimation = function(animName, force = false) {
+            if (window.isLiveMode && !force) return;
             window.activeAnim = animName;
             window.frameIndex = 0;
 
@@ -540,6 +555,48 @@
             else if (animName === 'backward') document.getElementById('btn-bwd')?.classList.add('kinematic-active');
             else if (animName === 'left') document.getElementById('btn-left')?.classList.add('kinematic-active');
             else if (animName === 'right') document.getElementById('btn-right')?.classList.add('kinematic-active');
+        };
+
+        // Helper for Mobile Phone ESP controller directives
+        window.executeRemoteCommand = function(cmd) {
+            if (!cmd) return;
+            let normCmd = '';
+            if (typeof cmd === 'string') normCmd = cmd.toLowerCase();
+            else if (cmd.dir) normCmd = String(cmd.dir).toLowerCase();
+            else if (cmd.command) {
+                if (typeof cmd.command === 'string') normCmd = cmd.command.toLowerCase();
+                else if (cmd.command.dir) normCmd = String(cmd.command.dir).toLowerCase();
+                else if (cmd.command.type) normCmd = String(cmd.command.type).toLowerCase();
+            }
+
+            let animName = 'stop';
+            if (normCmd.includes('fwd') || normCmd.includes('forward')) animName = 'forward';
+            else if (normCmd.includes('bwd') || normCmd.includes('back') || normCmd.includes('backward')) animName = 'backward';
+            else if (normCmd.includes('left')) animName = 'left';
+            else if (normCmd.includes('right')) animName = 'right';
+            else if (normCmd.includes('stop')) animName = 'stop';
+
+            // Flag that phone is in control — enables movement in Live Mode
+            window.mobileCommandActive = (animName !== 'stop');
+
+            // Force the animation regardless of live/demo mode
+            window.activeAnim = animName;
+            window.frameIndex = 0;
+
+            // Update button highlights
+            ['btn-fwd', 'btn-bwd', 'btn-left', 'btn-right'].forEach(id => {
+                const b = document.getElementById(id);
+                if (b) b.classList.remove('kinematic-active');
+            });
+            if (animName === 'forward') document.getElementById('btn-fwd')?.classList.add('kinematic-active');
+            else if (animName === 'backward') document.getElementById('btn-bwd')?.classList.add('kinematic-active');
+            else if (animName === 'left') document.getElementById('btn-left')?.classList.add('kinematic-active');
+            else if (animName === 'right') document.getElementById('btn-right')?.classList.add('kinematic-active');
+
+            const modeVal = cmd.mode || (cmd.command && cmd.command.mode);
+            if (modeVal === 'walk' || modeVal === 'drive') {
+                window.setLocomotionMode(modeVal);
+            }
         };
 
         window.dropRescueMarker = function() {
@@ -709,30 +766,65 @@
 
         // Track which hex cells have already been colored
         const coloredHexes = new Map();
+        const plottedWallKeys = new Set();
+
+        function extractUltrasonicValues(data) {
+            if (!data) return { left: 0, right: 0 };
+            let rawLeft = undefined;
+            let rawRight = undefined;
+
+            if (data.ultrasonic) {
+                rawLeft = data.ultrasonic.left ?? data.ultrasonic.leftDistance ?? data.ultrasonic.left_cm;
+                rawRight = data.ultrasonic.right ?? data.ultrasonic.rightDistance ?? data.ultrasonic.right_cm;
+            }
+            if (rawLeft === undefined) {
+                rawLeft = data.left ?? data.leftDistance ?? data.left_cm ?? data.leftM ?? data.tof?.left ?? data.lidar?.leftM;
+            }
+            if (rawRight === undefined) {
+                rawRight = data.right ?? data.rightDistance ?? data.right_cm ?? data.rightM ?? data.tof?.right ?? data.lidar?.rightM;
+            }
+
+            let leftM = typeof rawLeft === 'number' ? rawLeft : parseFloat(rawLeft);
+            let rightM = typeof rawRight === 'number' ? rawRight : parseFloat(rawRight);
+
+            if (isNaN(leftM) || leftM <= 0) leftM = 0;
+            if (isNaN(rightM) || rightM <= 0) rightM = 0;
+
+            // Automatically convert cm to meters if value > 10.0 (e.g. 45cm -> 0.45m)
+            if (leftM > 10.0) leftM = leftM / 100.0;
+            if (rightM > 10.0) rightM = rightM / 100.0;
+
+            return { left: leftM, right: rightM };
+        }
 
         // 6. Data Processors & Clean UI Heatmap Injection
         function processTelemetry(data) {
-            document.getElementById('telemetry-readout').innerHTML = `
-                <div class="data-row"><span class="data-label">Pos:</span> <span>X:${data.pose.x.toFixed(2)} Z:${data.pose.z.toFixed(2)}</span></div>
-                <div class="data-row" style="margin-bottom: 6px;"><span class="data-label">ToF:</span> <span>L:${data.tof.left.toFixed(1)} R:${data.tof.right.toFixed(1)}</span></div>
-                <div style="height: 1px; background: rgba(255,255,255,0.05); margin: 4px 0;"></div>
-                <div class="data-row"><span class="data-label">PM 1.0</span> <span>${data.sensors.pm1.toFixed(1)} µg/m³</span></div>
-                <div class="data-row"><span class="data-label">PM 2.5</span> <span>${data.sensors.pm2_5.toFixed(1)} µg/m³</span></div>
-                <div class="data-row" style="color:${data.sensors.pm10 > 75 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">PM 10</span> <span>${data.sensors.pm10.toFixed(0)} µg/m³</span></div>
-                <div class="data-row" style="color:${data.sensors.co > 25 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">CO</span> <span>${data.sensors.co.toFixed(1)} ppm</span></div>
-                <div class="data-row" style="color:${data.sensors.h2s > 5 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">H2S</span> <span>${data.sensors.h2s.toFixed(1)} ppm</span></div>
-                <div class="data-row" style="color:${data.sensors.o2 < 19.5 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">O2</span> <span>${data.sensors.o2.toFixed(1)} %</span></div>
-                <div class="data-row" style="color:${data.sensors.temp > 35 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">TEMP</span> <span>${data.sensors.temp.toFixed(1)} °C</span></div>
-                <div class="data-row"><span class="data-label">HUM</span> <span>${data.sensors.humidity.toFixed(1)} %</span></div>
-            `;
+            const { left: ultraLeft, right: ultraRight } = extractUltrasonicValues(data);
 
-            if(data.tof.left > 0 && data.tof.left < 2.0) plotWall(data.tof.left, Math.PI/2, data.pose);
-            if(data.tof.right > 0 && data.tof.right < 2.0) plotWall(data.tof.right, -Math.PI/2, data.pose);
+            const readoutEl = document.getElementById('telemetry-readout');
+            if (readoutEl) {
+                readoutEl.innerHTML = `
+                    <div class="data-row"><span class="data-label">Pos:</span> <span>X:${(data.pose?.x ?? 0).toFixed(2)} Z:${(data.pose?.z ?? 0).toFixed(2)}</span></div>
+                    <div class="data-row" style="margin-bottom: 6px;"><span class="data-label">Ultrasonic:</span> <span>L:${ultraLeft.toFixed(2)}m R:${ultraRight.toFixed(2)}m</span></div>
+                    <div style="height: 1px; background: rgba(255,255,255,0.05); margin: 4px 0;"></div>
+                    <div class="data-row"><span class="data-label">PM 1.0</span> <span>${(data.sensors?.pm1 ?? 10).toFixed(1)} µg/m³</span></div>
+                    <div class="data-row"><span class="data-label">PM 2.5</span> <span>${(data.sensors?.pm2_5 ?? 25).toFixed(1)} µg/m³</span></div>
+                    <div class="data-row" style="color:${(data.sensors?.pm10 ?? 35) > 75 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">PM 10</span> <span>${(data.sensors?.pm10 ?? 35).toFixed(0)} µg/m³</span></div>
+                    <div class="data-row" style="color:${(data.sensors?.co ?? 0) > 25 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">CO</span> <span>${(data.sensors?.co ?? 0).toFixed(1)} ppm</span></div>
+                    <div class="data-row" style="color:${(data.sensors?.h2s ?? 0) > 5 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">H2S</span> <span>${(data.sensors?.h2s ?? 0).toFixed(1)} ppm</span></div>
+                    <div class="data-row" style="color:${(data.sensors?.o2 ?? 20.9) < 19.5 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">O2</span> <span>${(data.sensors?.o2 ?? 20.9).toFixed(1)} %</span></div>
+                    <div class="data-row" style="color:${(data.sensors?.temp ?? 24) > 35 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">TEMP</span> <span>${(data.sensors?.temp ?? 24).toFixed(1)} °C</span></div>
+                    <div class="data-row"><span class="data-label">HUM</span> <span>${(data.sensors?.humidity ?? 50).toFixed(1)} %</span></div>
+                `;
+            }
+
+            if (ultraLeft > 0 && ultraLeft < 10.0) plotWall(ultraLeft, Math.PI/2, data.pose);
+            if (ultraRight > 0 && ultraRight < 10.0) plotWall(ultraRight, -Math.PI/2, data.pose);
 
             let dangerLevel = 0; 
-            if (data.sensors.h2s > 10 || data.sensors.co > 50 || data.sensors.pm10 > 150 || data.sensors.temp > 45 || data.sensors.o2 < 19.5) {
+            if ((data.sensors?.h2s ?? 0) > 10 || (data.sensors?.co ?? 0) > 50 || (data.sensors?.pm10 ?? 35) > 150 || (data.sensors?.temp ?? 24) > 45 || (data.sensors?.o2 ?? 20.9) < 19.5) {
                 dangerLevel = 2; // Danger Zone
-            } else if (data.sensors.h2s > 5 || data.sensors.co > 25 || data.sensors.pm10 > 75 || data.sensors.temp > 35) {
+            } else if ((data.sensors?.h2s ?? 0) > 5 || (data.sensors?.co ?? 0) > 25 || (data.sensors?.pm10 ?? 35) > 75 || (data.sensors?.temp ?? 24) > 35) {
                 dangerLevel = 1; // Middle Range Warning
             }
 
@@ -744,9 +836,17 @@
         }
 
         function plotWall(distance, angleOffset, pose) {
-            if (wallInstanced.count >= maxWalls) return;
+            if (wallInstanced.count >= maxWalls || !pose) return;
             const absoluteAngle = pose.yaw + angleOffset;
-            dummyMatrix.position.set(pose.x + Math.sin(absoluteAngle) * distance, 0.1, pose.z + Math.cos(absoluteAngle) * distance);
+            const wx = pose.x + Math.sin(absoluteAngle) * distance;
+            const wz = pose.z + Math.cos(absoluteAngle) * distance;
+
+            // Deduplicate 3D wall placement in 10cm spatial grid cells
+            const key = `${Math.round(wx * 10)},${Math.round(wz * 10)}`;
+            if (plottedWallKeys.has(key)) return;
+            plottedWallKeys.add(key);
+
+            dummyMatrix.position.set(wx, 0.2, wz);
             dummyMatrix.rotation.y = pose.yaw;
             dummyMatrix.updateMatrix();
             wallInstanced.setMatrixAt(wallInstanced.count, dummyMatrix.matrix);
@@ -787,15 +887,25 @@
             coloredHexes.set(cellKey, hexMesh);
         }
 
+        let window_lastLiveUltrasonic = null;
+
         function generateDummyData() {
             const isMoving = window.activeAnim !== 'stop';
             const spike = Math.random() > 0.90; 
             
+            // DEMO MODE: 100% Pure Fake Simulated Data (Independent of live hardware)
+            let leftVal = 1.2 + Math.sin(dummyFrameCounter * 0.1) * 0.05 + (Math.random() * 0.02);
+            let rightVal = 1.2 + Math.cos(dummyFrameCounter * 0.1) * 0.05 + (Math.random() * 0.02);
+
             return {
                 pose: { x: robotGroup.position.x, z: robotGroup.position.z, yaw: robotGroup.rotation.y },
-                tof: { 
-                    left: isMoving ? 0.8 + Math.random()*0.2 : 0, 
-                    right: isMoving ? 0.8 + Math.random()*0.2 : 0 
+                ultrasonic: { 
+                    left: leftVal, 
+                    right: rightVal 
+                },
+                tof: {
+                    left: leftVal,
+                    right: rightVal
                 },
                 sensors: {
                     pm1: spike ? 50 + Math.random()*50 : Math.random() * 10,
@@ -810,27 +920,17 @@
             };
         }
         
-        // ──────── PostMessage Bridge from Dashboard ───────────────────────────
+        // ──────── PostMessage & Mobile ESP Bridge ───────────────────────────
         window.addEventListener('message', (event) => {
             if (!event.data || typeof event.data !== 'object') return;
-            const { type, dir, mode } = event.data;
-
-            if (type === 'DRIVE_COMMAND' && dir) {
-                if (typeof window.playAnimation === 'function') {
-                    window.playAnimation(dir);
-                }
-            } else if (type === 'SET_LOCOMOTION_MODE' && mode) {
-                if (typeof window.setLocomotionMode === 'function') {
-                    window.setLocomotionMode(mode);
-                }
-            }
+            window.executeRemoteCommand(event.data);
         });
 
         // ──────── Multi-ESP WebSockets Support ────────────────────────────────
         const urlParams = new URLSearchParams(window.location.search);
         const host = window.location.hostname || 'localhost';
         const cmdWsUrl = urlParams.get('cmdWs') || 'ws://' + host + ':8765';
-        const tofWsUrl = urlParams.get('tofWs') || 'ws://' + host + ':8766';
+        const ultrasonicWsUrlPrimary = urlParams.get('tofWs') || urlParams.get('ultrasonicWs') || 'ws://10.232.110.101:8766/ws';
 
         let wsCmd = null;
         function initCmdWebSocket() {
@@ -850,6 +950,12 @@
                     try {
                         const raw = JSON.parse(event.data);
                         const data = raw.frame ? raw.frame : raw;
+
+                        // Execute mobile phone ESP drive directive if present
+                        if (data.type === 'command' || data.command || data.dir || data.type === 'DRIVE_COMMAND') {
+                            window.executeRemoteCommand(data);
+                        }
+
                         if (!data || !data.pose) return;
 
                         const oldX = robotGroup.position.x;
@@ -884,16 +990,149 @@
         }
         initCmdWebSocket();
 
-        let wsTof = null;
-        function initTofWebSocket() {
+        // ──────── Dedicated Mobile Phone ESP WebSocket ────────────────────────
+        // This is a separate, persistent connection ONLY for the phone controller.
+        // It connects immediately and never gives up, independent of other WS loops.
+        let wsMobile = null;
+        const MOBILE_ESP_URL = 'ws://10.232.110.100:81';
+        
+        function initMobileWebSocket() {
+            console.log('📱 [Mobile ESP] Connecting to:', MOBILE_ESP_URL);
+            const badge = document.getElementById('mobile-esp-status');
+            if (badge) { badge.innerText = '📱 Mobile ESP: Connecting...'; badge.style.color = '#F59E0B'; }
+            
             try {
-                wsTof = new WebSocket(tofWsUrl);
-                wsTof.onmessage = (event) => {
+                wsMobile = new WebSocket(MOBILE_ESP_URL);
+
+                wsMobile.onopen = () => {
+                    console.log('✅ [Mobile ESP] Connected at', MOBILE_ESP_URL);
+                    if (badge) { badge.innerText = '✅ Mobile ESP: CONNECTED'; badge.style.color = '#10B981'; }
+                };
+
+                wsMobile.onmessage = (event) => {
                     try {
                         const raw = JSON.parse(event.data);
                         const data = raw.frame ? raw.frame : raw;
-                        const tofLeft = data.tof?.left ?? data.lidar?.leftM ?? 1.2;
-                        const tofRight = data.tof?.right ?? data.lidar?.rightM ?? 1.2;
+                        console.log('📱 [Mobile ESP] Received:', data);
+                        
+                        if (data.type === 'command' || data.command || data.dir || data.type === 'DRIVE_COMMAND') {
+                            window.executeRemoteCommand(data);
+                        }
+
+                        // Process ultrasonic distance telemetry if broadcast from Mobile ESP
+                        const { left: uLeft, right: uRight } = extractUltrasonicValues(data);
+                        if (uLeft > 0 || uRight > 0) {
+                            window_lastLiveUltrasonic = { left: uLeft, right: uRight };
+                            const ultraBadge = document.getElementById('ultrasonic-status-badge');
+                            if (ultraBadge) {
+                                ultraBadge.innerText = `🟢 ESP3 Ultrasonic: LIVE | L:${uLeft.toFixed(2)}m R:${uRight.toFixed(2)}m`;
+                                ultraBadge.style.color = '#10B981';
+                            }
+                            if (window.isLiveMode && typeof robotGroup !== 'undefined') {
+                                const frameData = {
+                                    pose: {
+                                        x: robotGroup.position.x,
+                                        z: robotGroup.position.z,
+                                        yaw: robotGroup.rotation.y,
+                                    },
+                                    ultrasonic: { left: uLeft, right: uRight }
+                                };
+                                processTelemetry(frameData);
+                            }
+                        }
+                    } catch(e) { console.warn('[Mobile ESP] Parse error:', e); }
+                };
+
+                wsMobile.onclose = (e) => {
+                    console.warn('📱 [Mobile ESP] Disconnected. Retrying in 2s...', e.code);
+                    if (badge) { badge.innerText = '🔴 Mobile ESP: Disconnected. Retrying...'; badge.style.color = '#EF4444'; }
+                    setTimeout(initMobileWebSocket, 2000);
+                };
+
+                wsMobile.onerror = (err) => {
+                    console.warn('📱 [Mobile ESP] Connection error:', err);
+                    wsMobile?.close();
+                };
+            } catch(e) {
+                console.error('[Mobile ESP] Failed to create WebSocket:', e);
+                setTimeout(initMobileWebSocket, 3000);
+            }
+        }
+        initMobileWebSocket(); // ← Connect immediately on page load
+
+
+        let wsUltrasonic = null;
+        let ultrasonicUrlIndex = 0;
+        let customUltrasonicUrlOverride = null;
+
+        window.reconnectUltrasonicCustomIp = function() {
+            const ipInput = document.getElementById('ultrasonic-ip-input');
+            if (ipInput && ipInput.value) {
+                const ip = ipInput.value.trim();
+                customUltrasonicUrlOverride = ip.startsWith('ws://') ? ip : `ws://${ip}:8766/ws`;
+                if (wsUltrasonic) {
+                    wsUltrasonic.close();
+                } else {
+                    initUltrasonicWebSocket();
+                }
+            }
+        };
+
+        function initUltrasonicWebSocket() {
+            const candidateUrls = [
+                customUltrasonicUrlOverride,
+                ultrasonicWsUrlPrimary,
+                'ws://10.232.110.101:8766/ws',   // Ultrasonic ESP Static IP (.env.local)
+                'ws://10.232.110.101:8766',      // Direct Port 8766
+                'ws://10.232.110.100:81',        // Mobile ESP Controller WebSocket (Static IP on Router)
+                'ws://192.168.4.1:8766/ws',       // Fixed SoftAP IP
+                'ws://esp3-ultrasonic.local:8766/ws', // mDNS Hostname
+                'ws://10.52.239.215:8766/ws',
+                'ws://192.168.1.103:8766/ws'
+            ].filter(Boolean);
+
+            const activeUrl = candidateUrls[ultrasonicUrlIndex % candidateUrls.length];
+            const badge = document.getElementById('ultrasonic-status-badge');
+            
+            try {
+                if (badge) {
+                    badge.innerText = `ESP3 Ultrasonic: Connecting (${activeUrl})...`;
+                    badge.style.color = '#F59E0B';
+                    badge.style.background = 'rgba(245, 158, 11, 0.1)';
+                    badge.style.borderColor = 'rgba(245, 158, 11, 0.2)';
+                }
+
+                wsUltrasonic = new WebSocket(activeUrl);
+
+                wsUltrasonic.onopen = () => {
+                    console.log("✅ [DigitalTwin Ultrasonic] Connected to ESP3 WebSocket:", activeUrl);
+                    if (badge) {
+                        badge.innerText = `🟢 ESP3 Ultrasonic: CONNECTED (${activeUrl})`;
+                        badge.style.color = '#10B981';
+                        badge.style.background = 'rgba(16, 185, 129, 0.1)';
+                        badge.style.borderColor = 'rgba(16, 185, 129, 0.2)';
+                    }
+                };
+
+                wsUltrasonic.onmessage = (event) => {
+                    try {
+                        const raw = JSON.parse(event.data);
+                        const data = raw.frame ? raw.frame : raw;
+
+                        if (data.type === 'command' || data.command || data.dir || data.type === 'DRIVE_COMMAND') {
+                            window.executeRemoteCommand(data);
+                        }
+
+                        const { left: uLeft, right: uRight } = extractUltrasonicValues(data);
+
+                        window_lastLiveUltrasonic = { left: uLeft, right: uRight };
+
+                        if (badge) {
+                            badge.innerText = `🟢 ESP3 Ultrasonic: LIVE | L:${uLeft.toFixed(2)}m R:${uRight.toFixed(2)}m`;
+                            badge.style.color = '#10B981';
+                        }
+
+                        if (!window.isLiveMode) return;
 
                         const frameData = {
                             pose: {
@@ -901,7 +1140,8 @@
                                 z: data.pose?.z ?? robotGroup.position.z,
                                 yaw: data.pose?.yaw ?? robotGroup.rotation.y,
                             },
-                            tof: { left: tofLeft, right: tofRight },
+                            ultrasonic: { left: uLeft, right: uRight },
+                            tof: { left: uLeft, right: uRight },
                             sensors: {
                                 pm1: data.sensors?.pm1 ?? data.air?.pm1 ?? 10,
                                 pm2_5: data.sensors?.pm2_5 ?? data.air?.pm25 ?? 25,
@@ -916,10 +1156,33 @@
                         processTelemetry(frameData);
                     } catch(e){}
                 };
-                wsTof.onclose = () => setTimeout(initTofWebSocket, 3000);
-            } catch(e){}
+
+                wsUltrasonic.onclose = () => {
+                    if (badge) {
+                        badge.innerText = `🔴 ESP3 Ultrasonic: Retrying next endpoint...`;
+                        badge.style.color = '#EF4444';
+                        badge.style.background = 'rgba(239, 68, 68, 0.1)';
+                        badge.style.borderColor = 'rgba(239, 68, 68, 0.2)';
+                    }
+                    if (!customUltrasonicUrlOverride) {
+                        ultrasonicUrlIndex++;
+                    }
+                    setTimeout(initUltrasonicWebSocket, 1500);
+                };
+
+                wsUltrasonic.onerror = () => {
+                    wsUltrasonic?.close();
+                };
+            } catch(e){
+                if (badge) {
+                    badge.innerText = `🔴 ESP3 Ultrasonic: Connection Error`;
+                    badge.style.color = '#EF4444';
+                }
+                ultrasonicUrlIndex++;
+                setTimeout(initUltrasonicWebSocket, 2000);
+            }
         }
-        initTofWebSocket();
+        initUltrasonicWebSocket();
 
         const kf = {
             forward: [ { FrontR: LIFT, BackL: LIFT, FrontL: 0, BackR: 0, stubsliderbottom: SLIDE, stubsliderupper: 0 }, { FrontR: 0, BackL: 0, FrontL: LIFT, BackR: LIFT, stubsliderbottom: -SLIDE, stubsliderupper: 0 } ],
@@ -947,46 +1210,49 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            if (!window.isLiveMode && robot) {
+            if (robot) {
                 const oldX = robotGroup.position.x;
                 const oldZ = robotGroup.position.z;
 
-                if (window.locomotionMode === 'walk') {
-                    // === WALK MODE: Animate leg walking gait ===
-                    stepWalkAnimation(window.activeAnim);
+                // Run movement when: (1) in Demo mode always, OR (2) in Live mode driven by phone commands
+                const shouldMove = !window.isLiveMode || window.mobileCommandActive;
 
-                    if (window.activeAnim === 'forward') robotGroup.translateZ(walkSpeed);
-                    if (window.activeAnim === 'backward') robotGroup.translateZ(-walkSpeed);
-                    if (window.activeAnim === 'left') robotGroup.rotation.y += walkTurnSpeed;
-                    if (window.activeAnim === 'right') robotGroup.rotation.y -= walkTurnSpeed;
-                } else {
-                    // === DRIVE MODE: Wheels rotate and drive rover in space ===
-                    resetWalkingJoints();
+                if (shouldMove) {
+                    if (window.locomotionMode === 'walk') {
+                        // === WALK MODE: Animate leg walking gait ===
+                        stepWalkAnimation(window.activeAnim);
 
-                    if (window.activeAnim === 'forward') {
-                        robotGroup.translateZ(driveSpeed);
-                        updateWheels(driveSpeed, 0);
-                    } else if (window.activeAnim === 'backward') {
-                        robotGroup.translateZ(-driveSpeed);
-                        updateWheels(-driveSpeed, 0);
-                    } else if (window.activeAnim === 'left') {
-                        robotGroup.rotation.y += driveTurnSpeed;
-                        updateWheels(0, driveTurnSpeed);
-                    } else if (window.activeAnim === 'right') {
-                        robotGroup.rotation.y -= driveTurnSpeed;
-                        updateWheels(0, -driveTurnSpeed);
+                        if (window.activeAnim === 'forward') robotGroup.translateZ(walkSpeed);
+                        if (window.activeAnim === 'backward') robotGroup.translateZ(-walkSpeed);
+                        if (window.activeAnim === 'left') robotGroup.rotation.y += walkTurnSpeed;
+                        if (window.activeAnim === 'right') robotGroup.rotation.y -= walkTurnSpeed;
+                    } else {
+                        // === DRIVE MODE: Wheels rotate and drive rover in space ===
+                        resetWalkingJoints();
+
+                        if (window.activeAnim === 'forward') {
+                            robotGroup.translateZ(driveSpeed);
+                            updateWheels(driveSpeed, 0);
+                        } else if (window.activeAnim === 'backward') {
+                            robotGroup.translateZ(-driveSpeed);
+                            updateWheels(-driveSpeed, 0);
+                        } else if (window.activeAnim === 'left') {
+                            robotGroup.rotation.y += driveTurnSpeed;
+                            updateWheels(0, driveTurnSpeed);
+                        } else if (window.activeAnim === 'right') {
+                            robotGroup.rotation.y -= driveTurnSpeed;
+                            updateWheels(0, -driveTurnSpeed);
+                        }
                     }
-                }
 
-                camera.position.x += (robotGroup.position.x - oldX);
-                camera.position.z += (robotGroup.position.z - oldZ);
+                    camera.position.x += (robotGroup.position.x - oldX);
+                    camera.position.z += (robotGroup.position.z - oldZ);
 
-                dummyFrameCounter++;
-                if (window.activeAnim !== 'stop' && dummyFrameCounter % 15 === 0) {
-                    const dummyData = generateDummyData();
-                    processTelemetry(dummyData); 
-                    // Note: Dummy simulation data is processed locally for the dashboard
-                    // and is NOT sent over WebSocket, so only real ESP32 data gets logged.
+                    dummyFrameCounter++;
+                    if (!window.isLiveMode && window.activeAnim !== 'stop' && dummyFrameCounter % 10 === 0) {
+                        const dummyData = generateDummyData();
+                        processTelemetry(dummyData); 
+                    }
                 }
             }
             

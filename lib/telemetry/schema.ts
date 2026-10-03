@@ -22,6 +22,11 @@ export interface LidarClearance {
   rightM: number;
 }
 
+export interface UltrasonicClearance {
+  left: number;
+  right: number;
+}
+
 export interface Particulates {
   pm1: number;
   pm25: number;
@@ -105,6 +110,7 @@ export interface TelemetryFrame {
   air: Particulates;
   water: WaterState;
   lidar: LidarClearance;
+  ultrasonic?: UltrasonicClearance;
   motion: {
     speedMps: number;
     speedMaxMps: number;

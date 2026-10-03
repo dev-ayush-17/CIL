@@ -7,7 +7,7 @@ import { useView } from "@/components/shell/view-context";
 import { useTelemetryContext } from "@/lib/telemetry/telemetry-context";
 
 export function RobotHealth() {
-  const { frame, link, sendCommand } = useTelemetryContext();
+  const { frame, link, sendCommand, dropNode } = useTelemetryContext();
   const { view, setView } = useView();
   const mb = frame?.thermal?.mainboard;
   const estopActive = frame?.control?.estopActive ?? false;
@@ -35,11 +35,20 @@ export function RobotHealth() {
           </div>
           <SignalBars level={frame?.link?.signalPct ?? 0} />
         </div>
-        <div className="mt-[var(--space-sm)]">
-          <p className="label m-0">Nodes dropped</p>
-          <p className="num m-0 text-[length:var(--text-lg)]">
-            {frame?.link ? `${frame.link.nodesDropped}/${frame.link.nodesTotal}` : "—"}
-          </p>
+        <div className="mt-[var(--space-sm)] flex items-center justify-between">
+          <div>
+            <p className="label m-0">Nodes dropped</p>
+            <p className="num m-0 text-[length:var(--text-lg)]">
+              {frame?.link ? `${frame.link.nodesDropped}/${frame.link.nodesTotal}` : "0/10"}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="px-2.5 py-1 bg-[var(--color-accent,#3B82F6)] text-white hover:bg-blue-600 font-mono text-[11px] font-bold tracking-wider rounded uppercase transition-colors shadow-sm"
+            onClick={() => dropNode()}
+          >
+            📍 Drop Node
+          </button>
         </div>
         <div className="mt-[var(--space-sm)] grid gap-[var(--space-sm)]">
           <BarMeter value={frame?.lidar?.leftM ?? 0} max={2.5} label="Lidar L" warnBelow={0.4} />

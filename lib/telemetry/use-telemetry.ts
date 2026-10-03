@@ -16,7 +16,19 @@ export function useTelemetry() {
   const url = rawUrl.trim().replace(/^["']|["']$/g, "");
   const [frame, setFrame] = useState<TelemetryFrame | null>(null);
   const [history, setHistory] = useState<TelemetryFrame[]>([]);
-  const [link, setLink] = useState<LinkState>("connecting");
+  const [esp1Status, setEsp1Status] = useState<LinkState>("offline");
+  const [esp3Status, setEsp3Status] = useState<LinkState>("connecting");
+
+  const link: LinkState = (esp1Status === "online" || esp3Status === "online")
+    ? "online"
+    : (esp1Status === "stale" || esp3Status === "stale")
+      ? "stale"
+      : (esp1Status === "connecting" || esp3Status === "connecting")
+        ? "connecting"
+        : (esp1Status === "reconnecting" || esp3Status === "reconnecting")
+          ? "reconnecting"
+          : "offline";
+
   const [lastAck, setLastAck] = useState<ControlAck | null>(null);
   const [pendingCommands, setPendingCommands] = useState<
     Record<string, { command: ControlCommand; timestamp: number; unconfirmed: boolean; error?: string }>
@@ -111,22 +123,22 @@ export function useTelemetry() {
     const connect = () => {
       if (stopped) return;
       
-      console.log("🌐 Connecting Telemetry WebSocket to:", url);
+      console.log("🌐 Connecting Telemetry WebSocket to ESP1:", url);
 
       // If we already tried once and backoff > 800, we are reconnecting
       if (backoffRef.current > 800) {
-        setLink("reconnecting");
+        setEsp1Status("reconnecting");
       } else {
-        setLink("connecting");
+        setEsp1Status("connecting");
       }
       
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log("✅ WebSocket Connected successfully to:", url);
+        console.log("✅ WebSocket Connected successfully to ESP1:", url);
         backoffRef.current = 800;
-        setLink("online");
+        setEsp1Status("online");
         lastReceivedRef.current = Date.now();
 
         // Start ping heartbeat
@@ -147,9 +159,9 @@ export function useTelemetry() {
         staleChecker = setInterval(() => {
           const elapsed = Date.now() - lastReceivedRef.current;
           if (elapsed > 8000) {
-            setLink("stale");
+            setEsp1Status("stale");
           } else if (ws.readyState === WebSocket.OPEN && elapsed <= 8000) {
-            setLink("online");
+            setEsp1Status("online");
           }
         }, 1000);
       };
@@ -234,7 +246,7 @@ export function useTelemetry() {
         // If an old socket's onclose fires *after* a new socket is created, 
         // it shouldn't be allowed to nullify the new socket's ref.
         if (wsRef.current === ws) {
-          setLink("offline");
+          setEsp1Status("offline");
           wsRef.current = null;
         }
         
@@ -254,7 +266,7 @@ export function useTelemetry() {
     };
 
     connect();
-    
+
     return () => {
       stopped = true;
       if (timer) clearTimeout(timer);
@@ -264,7 +276,189 @@ export function useTelemetry() {
     };
   }, [url]);
 
-  return { frame, history, link, sendCommand, lastAck, url, pendingCommands };
+  // Secondary WebSocket connection for ESP3 ToF Sensors with universal endpoints
+  useEffect(() => {
+    const candidateUrls = [
+      process.env.NEXT_PUBLIC_TOF_WS_URL ?? "ws://10.52.239.215:8766/ws",
+      "ws://192.168.4.1:8766/ws",    // Fixed ESP3 SoftAP IP (NEVER CHANGES)
+      "ws://esp3-tof.local:8766/ws", // Universal mDNS Hostname
+      "ws://10.52.239.215:8766/ws",
+      "ws://192.168.1.103:8766/ws",
+    ].filter(Boolean);
+
+    let tofWs: WebSocket | null = null;
+    let tofTimer: ReturnType<typeof setTimeout> | undefined;
+    let urlIndex = 0;
+
+    const connectTof = () => {
+      const activeUrl = candidateUrls[urlIndex % candidateUrls.length];
+      console.log(`🌐 [ESP3 ToF] Connecting WebSocket (${urlIndex + 1}/${candidateUrls.length}): ${activeUrl}`);
+
+      try {
+        tofWs = new WebSocket(activeUrl);
+        tofWs.onopen = () => {
+          console.log(`✅ [ESP3 ToF] Connected successfully to: ${activeUrl}`);
+          setEsp3Status("online");
+          setFrame((curr) => {
+            const base = curr ?? mapInboundPayload({});
+            return {
+              ...base,
+              mission: {
+                ...base.mission,
+                robotOnline: true,
+              },
+              link: {
+                ...base.link,
+                quality: "online",
+              },
+            };
+          });
+        };
+
+        tofWs.onmessage = (ev) => {
+          lastReceivedRef.current = Date.now();
+          setEsp3Status("online");
+          try {
+            const raw = JSON.parse(String(ev.data));
+            const data = raw.frame ? raw.frame : raw;
+            const leftM = data.tof?.left ?? data.lidar?.leftM ?? 1.8;
+            const rightM = data.tof?.right ?? data.lidar?.rightM ?? 1.8;
+
+            setFrame((curr) => {
+              const base = curr ?? mapInboundPayload({});
+              return {
+                ...base,
+                mission: {
+                  ...base.mission,
+                  robotOnline: true,
+                },
+                link: {
+                  ...base.link,
+                  quality: "online",
+                },
+                lidar: { leftM, rightM },
+              };
+            });
+          } catch {
+            /* ignore malformed frames */
+          }
+        };
+
+        tofWs.onclose = () => {
+          console.warn(`⚠️ [ESP3 ToF] WebSocket disconnected from: ${activeUrl}`);
+          setEsp3Status("offline");
+          urlIndex++;
+          tofTimer = setTimeout(connectTof, 1500);
+        };
+        tofWs.onerror = () => {
+          console.warn(`⚠️ [ESP3 ToF] WebSocket connection error on: ${activeUrl}`);
+          tofWs?.close();
+        };
+      } catch (err) {
+        console.error("⚠️ [ESP3 ToF] Error initializing WebSocket:", err);
+        setEsp3Status("offline");
+        urlIndex++;
+        tofTimer = setTimeout(connectTof, 2000);
+      }
+    };
+
+    connectTof();
+
+    return () => {
+      if (tofTimer) clearTimeout(tofTimer);
+      tofWs?.close();
+    };
+  }, []);
+
+  const [nodesDropped, setNodesDropped] = useState<number>(0);
+  const [nodeDropTime, setNodeDropTime] = useState<number | null>(null);
+
+  const dropNode = useCallback(() => {
+    const newCount = nodesDropped + 1;
+    const now = Date.now();
+    setNodesDropped(newCount);
+    setNodeDropTime(now);
+
+    const ts = new Date().toISOString();
+    const logMsg = `MESH NODE #${newCount} DROPPED AT CURRENT POSITION. RE-CALIBRATING MESH TOPOLOGY...`;
+
+    setFrame((curr) => {
+      if (!curr) return null;
+      return {
+        ...curr,
+        link: {
+          ...curr.link,
+          nodesDropped: newCount,
+          signalPct: 50,
+          snrDbm: -78,
+        },
+        log: [{ ts, source: "COM", message: logMsg }, ...curr.log.slice(0, 23)],
+        alerts: [
+          {
+            id: `node-drop-${now}`,
+            ts,
+            severity: "info",
+            code: "NODE_RELAY",
+            message: `Mesh Relay Node #${newCount} dropped. Signal boost pending (10s)...`,
+          },
+          ...curr.alerts.slice(0, 5),
+        ],
+      };
+    });
+
+    // Notify twin iframe if active
+    if (typeof window !== "undefined") {
+      const twinIframe = document.querySelector("iframe[title='Digital Twin 3D View']") as HTMLIFrameElement;
+      if (twinIframe && twinIframe.contentWindow) {
+        twinIframe.contentWindow.postMessage({ type: "DROP_NODE", nodeIndex: newCount }, "*");
+      }
+    }
+
+    return newCount;
+  }, [nodesDropped]);
+
+  // Signal Strength Dynamics Simulation Loop (Faked signal strength with 10s post-node drop boost)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrame((curr) => {
+        if (!curr) return null;
+
+        let sigPct = curr.link.signalPct;
+        let snr = curr.link.snrDbm;
+
+        if (nodeDropTime !== null) {
+          const elapsedSec = (Date.now() - nodeDropTime) / 1000;
+          if (elapsedSec < 10) {
+            // Relinking phase during first 10 seconds post drop
+            sigPct = 48 + Math.floor(Math.random() * 8);
+            snr = -75 + Math.floor(Math.random() * 4);
+          } else {
+            // Rapid Boost Phase 10s post node drop
+            sigPct = 95 + Math.floor(Math.random() * 4); // 95% - 98%
+            snr = 20 + Math.floor(Math.random() * 5);   // +20 to +24 dBm
+          }
+        } else {
+          // Normal idle fluctuation before any node drop
+          sigPct = 78 + Math.floor(Math.random() * 6);
+          snr = -62 + Math.floor(Math.random() * 5);
+        }
+
+        return {
+          ...curr,
+          link: {
+            ...curr.link,
+            nodesDropped: nodesDropped > 0 ? nodesDropped : curr.link.nodesDropped,
+            signalPct: sigPct,
+            snrDbm: snr,
+          },
+        };
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [nodeDropTime, nodesDropped]);
+
+  return { frame, history, link, sendCommand, lastAck, url, pendingCommands, dropNode, nodesDropped };
 }
 
 function keyInDict<T>(obj: Record<string, T>, key: string): boolean {

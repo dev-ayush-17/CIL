@@ -63,6 +63,10 @@ export function mapInboundPayload(raw: unknown): TelemetryFrame {
       leftM: f.lidar?.leftM ?? 1.8,
       rightM: f.lidar?.rightM ?? 1.8,
     },
+    ultrasonic: {
+      left: f.ultrasonic?.left ?? f.lidar?.leftM ?? 1.2,
+      right: f.ultrasonic?.right ?? f.lidar?.rightM ?? 1.2,
+    },
     motion: {
       speedMps: f.motion?.speedMps ?? 0,
       speedMaxMps: f.motion?.speedMaxMps ?? 2.0,
