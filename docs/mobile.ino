@@ -7,15 +7,21 @@
 #include <Preferences.h>
 
 // ==========================================
-// WIFI & STATIC IP CONFIGURATION
+// WIFI & IP CONFIGURATION
 // ==========================================
-const char* ssid = "Mini_Dog";        
-const char* password = "password123"; 
+const char* ssid = "YOUR_WIFI_SSID";        
+const char* password = "YOUR_WIFI_PASSWORD"; 
 
-// Fixed Static IP Configuration for SoftAP Mode
-IPAddress ap_local_IP(192, 168, 4, 1);
-IPAddress ap_gateway(192, 168, 4, 1);
-IPAddress ap_subnet(255, 255, 255, 0);
+// Set to 'true' if you want to force the static IP
+// Set to 'false' to let your router assign an IP automatically (Recommended)
+bool useStaticIP = true; 
+
+// Matching your exact Wi-Fi network settings
+IPAddress local_IP(10, 232, 110, 100);   // The robot's new permanent IP
+IPAddress gateway(10, 232, 110, 148);    // Your router's gateway from cmd
+IPAddress subnet(255, 255, 255, 0);      // Your subnet from cmd
+IPAddress primaryDNS(8, 8, 8, 8);
+IPAddress secondaryDNS(8, 8, 4, 4);
 
 WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
@@ -34,6 +40,30 @@ void handleSpeed();
 void broadcastTwinCommand(String mode, String dir);
 
 // ==========================================
+// ULTRASONIC SENSOR PINS (HC-SR04)
+// ==========================================
+#define LEFT_TRIG  5
+#define LEFT_ECHO  18
+#define RIGHT_TRIG 19
+#define RIGHT_ECHO 21
+
+float readUltrasonicCm(int trigPin, int echoPin) {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  long duration = pulseIn(echoPin, HIGH, 30000); // 30ms timeout (~5m max)
+  if (duration == 0) return -1.0;
+  float dist = (duration * 0.0343) / 2.0;
+  return (dist >= 2.0 && dist <= 400.0) ? dist : -1.0;
+}
+
+unsigned long lastUltrasonicRead = 0;
+float currentLeftDistM = 0.0;
+float currentRightDistM = 0.0;
+
+// ==========================================
 // CALIBRATED HARDWARE CONSTANTS
 // ==========================================
 int fl_DOWN = 1600, fl_UP = 800;
@@ -43,11 +73,9 @@ int br_DOWN = 1400, br_UP = 2200;
 int slider_MIN = 1300, slider_MAX = 1700;
 int rot_OFFSET = 200, rot_TWIST = 800;
 
-// Servo Target & Filtered Positions
 float servo1Pos, servo2Pos, servo3Pos, servo4Pos, servo5Pos, servo6Pos;
 float s1F, s2F, s3F, s4F, s5F, s6F;
 
-// State Tracking Variables
 unsigned long currentMillis;
 long previousMillis = 0;
 long previousWalkMillis = 0;
@@ -55,10 +83,10 @@ int stepTime = 200;
 int filterVal = 5;  
 int walkCount = 0;
 
-int currentMode = 1; // 0 = Walk Mode, 1 = Drive Mode
-int walkAction = 0;  // 0=Stop, 1=Fwd, 2=Bwd, 3=Left, 4=Right
-int driveAction = 0; // 0=Stop, 1=Fwd, 2=Bwd, 3=Left, 4=Right
-int driveSpeed = 150; // Speed deviation from 1500 (50 to 500)
+int currentMode = 1; 
+int walkAction = 0;  
+int driveAction = 0; 
+int driveSpeed = 150; 
 
 // ==========================================
 // SLEEK MOBILE CONTROLLER HTML DASHBOARD
@@ -98,7 +126,7 @@ const char* htmlPage PROGMEM = R"rawliteral(
     #ws-status { font-size: 11px; color: #10B981; font-weight: 600; margin-top: 10px; }
   </style>
   <script>
-    let activeMode = 'drive'; // 'drive' or 'walk'
+    let activeMode = 'drive'; 
 
     function setMode(mode) {
       activeMode = mode;
@@ -131,7 +159,7 @@ const char* htmlPage PROGMEM = R"rawliteral(
 <body>
 
   <h2>Mini Dog Controller</h2>
-  <div class="badge">Static IP: 192.168.4.1 &bull; WS Port: 81</div>
+  <div class="badge">IP: %IP_ADDRESS% &bull; WS Port: 81</div>
 
   <div class="mode-switch">
     <button id="btn-mode-drive" class="mode-btn active-drive" onclick="setMode('drive')">⚙ Wheel Drive</button>
@@ -169,7 +197,7 @@ const char* htmlPage PROGMEM = R"rawliteral(
 void broadcastTwinCommand(String mode, String dir) {
   String json = "{\"type\":\"command\",\"mode\":\"" + mode + "\",\"command\":{\"type\":\"" + mode + "\",\"dir\":\"" + dir + "\"}}";
   webSocket.broadcastTXT(json);
-  Serial.println("🌐 [WS Broadcast to Digital Twin]: " + json);
+  Serial.println("🌐 [WS Broadcast to Twin]: " + json);
 }
 
 // ==========================================
@@ -178,10 +206,14 @@ void broadcastTwinCommand(String mode, String dir) {
 void handleRoot() {
   String html = String(htmlPage);
   html.replace("%driveSpeed%", String(driveSpeed));
+  html.replace("%IP_ADDRESS%", WiFi.localIP().toString());
+  
+  server.sendHeader("Access-Control-Allow-Origin", "*");
   server.send(200, "text/html", html);
 }
 
 void handleCmd() { 
+  server.sendHeader("Access-Control-Allow-Origin", "*");
   if (server.hasArg("action")) {
     String action = server.arg("action");
     currentMode = 0;
@@ -195,10 +227,13 @@ void handleCmd() {
     
     broadcastTwinCommand("walk", action);
     server.send(200, "text/plain", "OK");
+  } else {
+    server.send(400, "text/plain", "Bad Request");
   }
 }
 
 void handleDrive() { 
+  server.sendHeader("Access-Control-Allow-Origin", "*");
   if (server.hasArg("action")) {
     String action = server.arg("action");
     currentMode = 1;
@@ -212,10 +247,13 @@ void handleDrive() {
     
     broadcastTwinCommand("drive", action);
     server.send(200, "text/plain", "OK");
+  } else {
+    server.send(400, "text/plain", "Bad Request");
   }
 }
 
 void handleSpeed() { 
+  server.sendHeader("Access-Control-Allow-Origin", "*");
   if (server.hasArg("val")) {
     driveSpeed = server.arg("val").toInt();
     prefs.putInt("d_spd", driveSpeed);
@@ -226,7 +264,7 @@ void handleSpeed() {
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
   if (type == WStype_CONNECTED) {
     IPAddress ip = webSocket.remoteIP(num);
-    Serial.printf("🟢 [Digital Twin] Connected client #%u from %d.%d.%d.%d\n", num, ip[0], ip[1], ip[2], ip[3]);
+    Serial.printf("🟢 [Twin] Connected client #%u from %d.%d.%d.%d\n", num, ip[0], ip[1], ip[2], ip[3]);
   }
 }
 
@@ -235,6 +273,17 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
 // ==========================================
 void setup() {
   Serial.begin(115200);
+  
+  // Ultrasonic Sensor Pin Setup
+  pinMode(LEFT_TRIG, OUTPUT);
+  pinMode(LEFT_ECHO, INPUT);
+  pinMode(RIGHT_TRIG, OUTPUT);
+  pinMode(RIGHT_ECHO, INPUT);
+  digitalWrite(LEFT_TRIG, LOW);
+  digitalWrite(RIGHT_TRIG, LOW);
+  
+  // Explicitly begin I2C just in case PCA requires strict GPIO
+  Wire.begin(); 
   
   prefs.begin("minidog", false);
   driveSpeed = prefs.getInt("d_spd", 150);
@@ -249,10 +298,32 @@ void setup() {
   pwm.setPWMFreq(50);  
   delay(100);
   
-  // Configure Static IP Address for SoftAP (192.168.4.1)
-  WiFi.softAPConfig(ap_local_IP, ap_gateway, ap_subnet);
-  WiFi.softAP(ssid, password);
-  Serial.println("✅ SoftAP Started with Fixed Static IP: 192.168.4.1");
+  // Fix Wi-Fi configuration
+  WiFi.mode(WIFI_STA);
+  
+  // Force reset DHCP first before applying static IP to prevent cache glitches
+  WiFi.config(IPAddress(0,0,0,0), IPAddress(0,0,0,0), IPAddress(0,0,0,0));
+  delay(100);
+  
+  if(useStaticIP) {
+    // Only apply static IP if the boolean is true
+    WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS);
+    Serial.println("Using Static IP Configuration...");
+  } else {
+    // Let router assign an IP dynamically
+    Serial.println("Using DHCP Configuration...");
+  }
+  
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi ");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  Serial.println("\n✅ Connected to Wi-Fi!");
+  Serial.print("🌐 Open this IP in your phone's browser: http://");
+  Serial.println(WiFi.localIP());
 
   ArduinoOTA.setHostname("MiniDog-Controller");
   ArduinoOTA.begin();
@@ -274,14 +345,13 @@ void setup() {
 // MAIN LOOP
 // ==========================================
 void loop() {
+    
   server.handleClient(); 
   webSocket.loop();
   ArduinoOTA.handle(); 
   currentMillis = millis();
 
-  // ------------------------------------------
   // 1. WALKING STEP SEQUENCER
-  // ------------------------------------------
   if (currentMillis - previousWalkMillis >= stepTime) {
     previousWalkMillis = currentMillis;
 
@@ -327,9 +397,7 @@ void loop() {
     }
   }
 
-  // ------------------------------------------
   // 2. THE MOTION FILTER & WHEEL OUTPUT
-  // ------------------------------------------
   if (currentMillis - previousMillis >= 10) {
     previousMillis = currentMillis;
 
@@ -347,16 +415,16 @@ void loop() {
       servo3Pos = fr_DOWN; servo4Pos = bl_DOWN;
       servo5Pos = 1500;    servo6Pos = 1500;
 
-      if (driveAction == 1) { // FWD (Left +, Right -)
+      if (driveAction == 1) { // FWD
         fl_w = 1500 + driveSpeed; bl_w = 1500 + driveSpeed;
         fr_w = 1500 - driveSpeed; br_w = 1500 - driveSpeed;
-      } else if (driveAction == 2) { // BCK (Left -, Right +)
+      } else if (driveAction == 2) { // BCK
         fl_w = 1500 - driveSpeed; bl_w = 1500 - driveSpeed;
         fr_w = 1500 + driveSpeed; br_w = 1500 + driveSpeed;
-      } else if (driveAction == 3) { // TURN LEFT (Left -, Right -)
+      } else if (driveAction == 3) { // TURN LEFT
         fl_w = 1500 - driveSpeed; bl_w = 1500 - driveSpeed;
         fr_w = 1500 - driveSpeed; br_w = 1500 - driveSpeed;
-      } else if (driveAction == 4) { // TURN RIGHT (Left +, Right +)
+      } else if (driveAction == 4) { // TURN RIGHT
         fl_w = 1500 + driveSpeed; bl_w = 1500 + driveSpeed;
         fr_w = 1500 + driveSpeed; br_w = 1500 + driveSpeed;
       }
@@ -374,6 +442,25 @@ void loop() {
     writeMicrosecondsToPCA(8,  bl_w); 
     writeMicrosecondsToPCA(12, br_w); 
   }
+  
+  // 3. ULTRASONIC SENSOR TELEMETRY & WEBSOCKET BROADCAST
+  if (currentMillis - lastUltrasonicRead >= 150) {
+    lastUltrasonicRead = currentMillis;
+    float lCm = readUltrasonicCm(LEFT_TRIG, LEFT_ECHO);
+    delayMicroseconds(1000);
+    float rCm = readUltrasonicCm(RIGHT_TRIG, RIGHT_ECHO);
+
+    currentLeftDistM = (lCm > 0) ? (lCm / 100.0) : 0.0;
+    currentRightDistM = (rCm > 0) ? (rCm / 100.0) : 0.0;
+
+    String json = "{\"type\":\"ultrasonic\",\"ultrasonic\":{\"left\":" + String(currentLeftDistM, 3) + 
+                   ",\"right\":" + String(currentRightDistM, 3) + "},\"left_cm\":" + String(lCm, 1) + 
+                   ",\"right_cm\":" + String(rCm, 1) + "}";
+    webSocket.broadcastTXT(json);
+  }
+  
+  // Yield to allow ESP32 core networking tasks to process properly
+  yield(); 
 }
 
 // ==========================================

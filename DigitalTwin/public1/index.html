@@ -166,7 +166,7 @@
             ESP3 Ultrasonic: Connecting...
         </div>
         <div style="display: flex; gap: 4px; margin-bottom: 4px;">
-            <input type="text" id="ultrasonic-ip-input" value="10.52.239.215" placeholder="ESP3 Ultrasonic IP (e.g. 10.52.239.215)" style="flex: 1; min-width: 0; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.12); color: #38BDF8; font-family: monospace; font-size: 11px; padding: 4px 6px; border-radius: 6px;" />
+            <input type="text" id="ultrasonic-ip-input" value="10.232.110.101" placeholder="ESP3 Ultrasonic IP (e.g. 10.232.110.101)" style="flex: 1; min-width: 0; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.12); color: #38BDF8; font-family: monospace; font-size: 11px; padding: 4px 6px; border-radius: 6px;" />
             <button onclick="reconnectUltrasonicCustomIp()" style="padding: 4px 8px; font-size: 10px; font-weight: 600;">Connect</button>
         </div>
 
@@ -576,7 +576,22 @@
             else if (normCmd.includes('right')) animName = 'right';
             else if (normCmd.includes('stop')) animName = 'stop';
 
-            window.playAnimation(animName, true);
+            // Flag that phone is in control — enables movement in Live Mode
+            window.mobileCommandActive = (animName !== 'stop');
+
+            // Force the animation regardless of live/demo mode
+            window.activeAnim = animName;
+            window.frameIndex = 0;
+
+            // Update button highlights
+            ['btn-fwd', 'btn-bwd', 'btn-left', 'btn-right'].forEach(id => {
+                const b = document.getElementById(id);
+                if (b) b.classList.remove('kinematic-active');
+            });
+            if (animName === 'forward') document.getElementById('btn-fwd')?.classList.add('kinematic-active');
+            else if (animName === 'backward') document.getElementById('btn-bwd')?.classList.add('kinematic-active');
+            else if (animName === 'left') document.getElementById('btn-left')?.classList.add('kinematic-active');
+            else if (animName === 'right') document.getElementById('btn-right')?.classList.add('kinematic-active');
 
             const modeVal = cmd.mode || (cmd.command && cmd.command.mode);
             if (modeVal === 'walk' || modeVal === 'drive') {
@@ -751,33 +766,65 @@
 
         // Track which hex cells have already been colored
         const coloredHexes = new Map();
+        const plottedWallKeys = new Set();
+
+        function extractUltrasonicValues(data) {
+            if (!data) return { left: 0, right: 0 };
+            let rawLeft = undefined;
+            let rawRight = undefined;
+
+            if (data.ultrasonic) {
+                rawLeft = data.ultrasonic.left ?? data.ultrasonic.leftDistance ?? data.ultrasonic.left_cm;
+                rawRight = data.ultrasonic.right ?? data.ultrasonic.rightDistance ?? data.ultrasonic.right_cm;
+            }
+            if (rawLeft === undefined) {
+                rawLeft = data.left ?? data.leftDistance ?? data.left_cm ?? data.leftM ?? data.tof?.left ?? data.lidar?.leftM;
+            }
+            if (rawRight === undefined) {
+                rawRight = data.right ?? data.rightDistance ?? data.right_cm ?? data.rightM ?? data.tof?.right ?? data.lidar?.rightM;
+            }
+
+            let leftM = typeof rawLeft === 'number' ? rawLeft : parseFloat(rawLeft);
+            let rightM = typeof rawRight === 'number' ? rawRight : parseFloat(rawRight);
+
+            if (isNaN(leftM) || leftM <= 0) leftM = 0;
+            if (isNaN(rightM) || rightM <= 0) rightM = 0;
+
+            // Automatically convert cm to meters if value > 10.0 (e.g. 45cm -> 0.45m)
+            if (leftM > 10.0) leftM = leftM / 100.0;
+            if (rightM > 10.0) rightM = rightM / 100.0;
+
+            return { left: leftM, right: rightM };
+        }
 
         // 6. Data Processors & Clean UI Heatmap Injection
         function processTelemetry(data) {
-            const ultraLeft = data.ultrasonic?.left ?? data.tof?.left ?? data.lidar?.leftM ?? 0;
-            const ultraRight = data.ultrasonic?.right ?? data.tof?.right ?? data.lidar?.rightM ?? 0;
+            const { left: ultraLeft, right: ultraRight } = extractUltrasonicValues(data);
 
-            document.getElementById('telemetry-readout').innerHTML = `
-                <div class="data-row"><span class="data-label">Pos:</span> <span>X:${data.pose.x.toFixed(2)} Z:${data.pose.z.toFixed(2)}</span></div>
-                <div class="data-row" style="margin-bottom: 6px;"><span class="data-label">Ultrasonic:</span> <span>L:${ultraLeft.toFixed(1)}m R:${ultraRight.toFixed(1)}m</span></div>
-                <div style="height: 1px; background: rgba(255,255,255,0.05); margin: 4px 0;"></div>
-                <div class="data-row"><span class="data-label">PM 1.0</span> <span>${data.sensors.pm1.toFixed(1)} µg/m³</span></div>
-                <div class="data-row"><span class="data-label">PM 2.5</span> <span>${data.sensors.pm2_5.toFixed(1)} µg/m³</span></div>
-                <div class="data-row" style="color:${data.sensors.pm10 > 75 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">PM 10</span> <span>${data.sensors.pm10.toFixed(0)} µg/m³</span></div>
-                <div class="data-row" style="color:${data.sensors.co > 25 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">CO</span> <span>${data.sensors.co.toFixed(1)} ppm</span></div>
-                <div class="data-row" style="color:${data.sensors.h2s > 5 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">H2S</span> <span>${data.sensors.h2s.toFixed(1)} ppm</span></div>
-                <div class="data-row" style="color:${data.sensors.o2 < 19.5 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">O2</span> <span>${data.sensors.o2.toFixed(1)} %</span></div>
-                <div class="data-row" style="color:${data.sensors.temp > 35 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">TEMP</span> <span>${data.sensors.temp.toFixed(1)} °C</span></div>
-                <div class="data-row"><span class="data-label">HUM</span> <span>${data.sensors.humidity.toFixed(1)} %</span></div>
-            `;
+            const readoutEl = document.getElementById('telemetry-readout');
+            if (readoutEl) {
+                readoutEl.innerHTML = `
+                    <div class="data-row"><span class="data-label">Pos:</span> <span>X:${(data.pose?.x ?? 0).toFixed(2)} Z:${(data.pose?.z ?? 0).toFixed(2)}</span></div>
+                    <div class="data-row" style="margin-bottom: 6px;"><span class="data-label">Ultrasonic:</span> <span>L:${ultraLeft.toFixed(2)}m R:${ultraRight.toFixed(2)}m</span></div>
+                    <div style="height: 1px; background: rgba(255,255,255,0.05); margin: 4px 0;"></div>
+                    <div class="data-row"><span class="data-label">PM 1.0</span> <span>${(data.sensors?.pm1 ?? 10).toFixed(1)} µg/m³</span></div>
+                    <div class="data-row"><span class="data-label">PM 2.5</span> <span>${(data.sensors?.pm2_5 ?? 25).toFixed(1)} µg/m³</span></div>
+                    <div class="data-row" style="color:${(data.sensors?.pm10 ?? 35) > 75 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">PM 10</span> <span>${(data.sensors?.pm10 ?? 35).toFixed(0)} µg/m³</span></div>
+                    <div class="data-row" style="color:${(data.sensors?.co ?? 0) > 25 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">CO</span> <span>${(data.sensors?.co ?? 0).toFixed(1)} ppm</span></div>
+                    <div class="data-row" style="color:${(data.sensors?.h2s ?? 0) > 5 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">H2S</span> <span>${(data.sensors?.h2s ?? 0).toFixed(1)} ppm</span></div>
+                    <div class="data-row" style="color:${(data.sensors?.o2 ?? 20.9) < 19.5 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">O2</span> <span>${(data.sensors?.o2 ?? 20.9).toFixed(1)} %</span></div>
+                    <div class="data-row" style="color:${(data.sensors?.temp ?? 24) > 35 ? '#FCA5A5' : '#86EFAC'}"><span class="data-label">TEMP</span> <span>${(data.sensors?.temp ?? 24).toFixed(1)} °C</span></div>
+                    <div class="data-row"><span class="data-label">HUM</span> <span>${(data.sensors?.humidity ?? 50).toFixed(1)} %</span></div>
+                `;
+            }
 
             if (ultraLeft > 0 && ultraLeft < 10.0) plotWall(ultraLeft, Math.PI/2, data.pose);
             if (ultraRight > 0 && ultraRight < 10.0) plotWall(ultraRight, -Math.PI/2, data.pose);
 
             let dangerLevel = 0; 
-            if (data.sensors.h2s > 10 || data.sensors.co > 50 || data.sensors.pm10 > 150 || data.sensors.temp > 45 || data.sensors.o2 < 19.5) {
+            if ((data.sensors?.h2s ?? 0) > 10 || (data.sensors?.co ?? 0) > 50 || (data.sensors?.pm10 ?? 35) > 150 || (data.sensors?.temp ?? 24) > 45 || (data.sensors?.o2 ?? 20.9) < 19.5) {
                 dangerLevel = 2; // Danger Zone
-            } else if (data.sensors.h2s > 5 || data.sensors.co > 25 || data.sensors.pm10 > 75 || data.sensors.temp > 35) {
+            } else if ((data.sensors?.h2s ?? 0) > 5 || (data.sensors?.co ?? 0) > 25 || (data.sensors?.pm10 ?? 35) > 75 || (data.sensors?.temp ?? 24) > 35) {
                 dangerLevel = 1; // Middle Range Warning
             }
 
@@ -789,10 +836,17 @@
         }
 
         function plotWall(distance, angleOffset, pose) {
-            if (wallInstanced.count >= maxWalls) return;
+            if (wallInstanced.count >= maxWalls || !pose) return;
             const absoluteAngle = pose.yaw + angleOffset;
+            const wx = pose.x + Math.sin(absoluteAngle) * distance;
+            const wz = pose.z + Math.cos(absoluteAngle) * distance;
 
-            dummyMatrix.position.set(pose.x + Math.sin(absoluteAngle) * distance, 0.2, pose.z + Math.cos(absoluteAngle) * distance);
+            // Deduplicate 3D wall placement in 10cm spatial grid cells
+            const key = `${Math.round(wx * 10)},${Math.round(wz * 10)}`;
+            if (plottedWallKeys.has(key)) return;
+            plottedWallKeys.add(key);
+
+            dummyMatrix.position.set(wx, 0.2, wz);
             dummyMatrix.rotation.y = pose.yaw;
             dummyMatrix.updateMatrix();
             wallInstanced.setMatrixAt(wallInstanced.count, dummyMatrix.matrix);
@@ -876,7 +930,7 @@
         const urlParams = new URLSearchParams(window.location.search);
         const host = window.location.hostname || 'localhost';
         const cmdWsUrl = urlParams.get('cmdWs') || 'ws://' + host + ':8765';
-        const ultrasonicWsUrlPrimary = urlParams.get('tofWs') || urlParams.get('ultrasonicWs') || 'ws://10.52.239.215:8766/ws';
+        const ultrasonicWsUrlPrimary = urlParams.get('tofWs') || urlParams.get('ultrasonicWs') || 'ws://10.232.110.101:8766/ws';
 
         let wsCmd = null;
         function initCmdWebSocket() {
@@ -936,6 +990,70 @@
         }
         initCmdWebSocket();
 
+        // ──────── Dedicated Mobile Phone ESP WebSocket ────────────────────────
+        let wsMobile = null;
+        const MOBILE_ESP_URL = 'ws://10.232.110.100:81';
+        
+        function initMobileWebSocket() {
+            console.log('📱 [Mobile ESP] Connecting to:', MOBILE_ESP_URL);
+            try {
+                wsMobile = new WebSocket(MOBILE_ESP_URL);
+
+                wsMobile.onopen = () => {
+                    console.log('✅ [Mobile ESP] Connected at', MOBILE_ESP_URL);
+                };
+
+                wsMobile.onmessage = (event) => {
+                    try {
+                        const raw = JSON.parse(event.data);
+                        const data = raw.frame ? raw.frame : raw;
+                        console.log('📱 [Mobile ESP] Received:', data);
+                        
+                        if (data.type === 'command' || data.command || data.dir || data.type === 'DRIVE_COMMAND') {
+                            window.executeRemoteCommand(data);
+                        }
+
+                        // Process ultrasonic distance telemetry if broadcast from Mobile ESP
+                        const { left: uLeft, right: uRight } = extractUltrasonicValues(data);
+                        if (uLeft > 0 || uRight > 0) {
+                            window_lastLiveUltrasonic = { left: uLeft, right: uRight };
+                            const ultraBadge = document.getElementById('ultrasonic-status-badge');
+                            if (ultraBadge) {
+                                ultraBadge.innerText = `🟢 ESP3 Ultrasonic: LIVE | L:${uLeft.toFixed(2)}m R:${uRight.toFixed(2)}m`;
+                                ultraBadge.style.color = '#10B981';
+                            }
+                            if (window.isLiveMode && typeof robotGroup !== 'undefined') {
+                                const frameData = {
+                                    pose: {
+                                        x: robotGroup.position.x,
+                                        z: robotGroup.position.z,
+                                        yaw: robotGroup.rotation.y,
+                                    },
+                                    ultrasonic: { left: uLeft, right: uRight }
+                                };
+                                processTelemetry(frameData);
+                            }
+                        }
+                    } catch(e) { console.warn('[Mobile ESP] Parse error:', e); }
+                };
+
+                wsMobile.onclose = (e) => {
+                    console.warn('📱 [Mobile ESP] Disconnected. Retrying in 2s...', e.code);
+                    setTimeout(initMobileWebSocket, 2000);
+                };
+
+                wsMobile.onerror = (err) => {
+                    console.warn('📱 [Mobile ESP] Connection error:', err);
+                    wsMobile?.close();
+                };
+            } catch(e) {
+                console.error('[Mobile ESP] Failed to create WebSocket:', e);
+                setTimeout(initMobileWebSocket, 3000);
+            }
+        }
+        initMobileWebSocket();
+
+
         let wsUltrasonic = null;
         let ultrasonicUrlIndex = 0;
         let customUltrasonicUrlOverride = null;
@@ -957,7 +1075,9 @@
             const candidateUrls = [
                 customUltrasonicUrlOverride,
                 ultrasonicWsUrlPrimary,
-                'ws://192.168.4.1:81',           // Mobile ESP Controller WebSocket (Fixed Static IP)
+                'ws://10.232.110.101:8766/ws',   // Ultrasonic ESP Static IP (.env.local)
+                'ws://10.232.110.101:8766',      // Direct Port 8766
+                'ws://10.232.110.100:81',        // Mobile ESP Controller WebSocket (Static IP on Router)
                 'ws://192.168.4.1:8766/ws',       // Fixed SoftAP IP
                 'ws://esp3-ultrasonic.local:8766/ws', // mDNS Hostname
                 'ws://10.52.239.215:8766/ws',
@@ -996,8 +1116,7 @@
                             window.executeRemoteCommand(data);
                         }
 
-                        const uLeft = data.ultrasonic?.left ?? data.tof?.left ?? data.lidar?.leftM ?? 1.2;
-                        const uRight = data.ultrasonic?.right ?? data.tof?.right ?? data.lidar?.rightM ?? 1.2;
+                        const { left: uLeft, right: uRight } = extractUltrasonicValues(data);
 
                         window_lastLiveUltrasonic = { left: uLeft, right: uRight };
 
@@ -1084,44 +1203,49 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            if (!window.isLiveMode && robot) {
+            if (robot) {
                 const oldX = robotGroup.position.x;
                 const oldZ = robotGroup.position.z;
 
-                if (window.locomotionMode === 'walk') {
-                    // === WALK MODE: Animate leg walking gait ===
-                    stepWalkAnimation(window.activeAnim);
+                // Run movement when: (1) in Demo mode always, OR (2) in Live mode driven by phone commands
+                const shouldMove = !window.isLiveMode || window.mobileCommandActive;
 
-                    if (window.activeAnim === 'forward') robotGroup.translateZ(walkSpeed);
-                    if (window.activeAnim === 'backward') robotGroup.translateZ(-walkSpeed);
-                    if (window.activeAnim === 'left') robotGroup.rotation.y += walkTurnSpeed;
-                    if (window.activeAnim === 'right') robotGroup.rotation.y -= walkTurnSpeed;
-                } else {
-                    // === DRIVE MODE: Wheels rotate and drive rover in space ===
-                    resetWalkingJoints();
+                if (shouldMove) {
+                    if (window.locomotionMode === 'walk') {
+                        // === WALK MODE: Animate leg walking gait ===
+                        stepWalkAnimation(window.activeAnim);
 
-                    if (window.activeAnim === 'forward') {
-                        robotGroup.translateZ(driveSpeed);
-                        updateWheels(driveSpeed, 0);
-                    } else if (window.activeAnim === 'backward') {
-                        robotGroup.translateZ(-driveSpeed);
-                        updateWheels(-driveSpeed, 0);
-                    } else if (window.activeAnim === 'left') {
-                        robotGroup.rotation.y += driveTurnSpeed;
-                        updateWheels(0, driveTurnSpeed);
-                    } else if (window.activeAnim === 'right') {
-                        robotGroup.rotation.y -= driveTurnSpeed;
-                        updateWheels(0, -driveTurnSpeed);
+                        if (window.activeAnim === 'forward') robotGroup.translateZ(walkSpeed);
+                        if (window.activeAnim === 'backward') robotGroup.translateZ(-walkSpeed);
+                        if (window.activeAnim === 'left') robotGroup.rotation.y += walkTurnSpeed;
+                        if (window.activeAnim === 'right') robotGroup.rotation.y -= walkTurnSpeed;
+                    } else {
+                        // === DRIVE MODE: Wheels rotate and drive rover in space ===
+                        resetWalkingJoints();
+
+                        if (window.activeAnim === 'forward') {
+                            robotGroup.translateZ(driveSpeed);
+                            updateWheels(driveSpeed, 0);
+                        } else if (window.activeAnim === 'backward') {
+                            robotGroup.translateZ(-driveSpeed);
+                            updateWheels(-driveSpeed, 0);
+                        } else if (window.activeAnim === 'left') {
+                            robotGroup.rotation.y += driveTurnSpeed;
+                            updateWheels(0, driveTurnSpeed);
+                        } else if (window.activeAnim === 'right') {
+                            robotGroup.rotation.y -= driveTurnSpeed;
+                            updateWheels(0, -driveTurnSpeed);
+                        }
                     }
-                }
 
-                camera.position.x += (robotGroup.position.x - oldX);
-                camera.position.z += (robotGroup.position.z - oldZ);
+                    camera.position.x += (robotGroup.position.x - oldX);
+                    camera.position.z += (robotGroup.position.z - oldZ);
 
-                dummyFrameCounter++;
-                if (window.activeAnim !== 'stop' && dummyFrameCounter % 10 === 0) {
-                    const dummyData = generateDummyData();
-                    processTelemetry(dummyData); 
+                    dummyFrameCounter++;
+                    if (!window.isLiveMode && window.activeAnim !== 'stop' && dummyFrameCounter % 10 === 0) {
+                        const dummyData = generateDummyData();
+                        processTelemetry(dummyData); 
+                    }
                 }
             }
             
