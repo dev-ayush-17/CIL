@@ -16,7 +16,19 @@ export function useTelemetry() {
   const url = rawUrl.trim().replace(/^["']|["']$/g, "");
   const [frame, setFrame] = useState<TelemetryFrame | null>(null);
   const [history, setHistory] = useState<TelemetryFrame[]>([]);
-  const [link, setLink] = useState<LinkState>("connecting");
+  const [esp1Status, setEsp1Status] = useState<LinkState>("offline");
+  const [esp3Status, setEsp3Status] = useState<LinkState>("connecting");
+
+  const link: LinkState = (esp1Status === "online" || esp3Status === "online")
+    ? "online"
+    : (esp1Status === "stale" || esp3Status === "stale")
+      ? "stale"
+      : (esp1Status === "connecting" || esp3Status === "connecting")
+        ? "connecting"
+        : (esp1Status === "reconnecting" || esp3Status === "reconnecting")
+          ? "reconnecting"
+          : "offline";
+
   const [lastAck, setLastAck] = useState<ControlAck | null>(null);
   const [pendingCommands, setPendingCommands] = useState<
     Record<string, { command: ControlCommand; timestamp: number; unconfirmed: boolean; error?: string }>
@@ -111,22 +123,22 @@ export function useTelemetry() {
     const connect = () => {
       if (stopped) return;
       
-      console.log("🌐 Connecting Telemetry WebSocket to:", url);
+      console.log("🌐 Connecting Telemetry WebSocket to ESP1:", url);
 
       // If we already tried once and backoff > 800, we are reconnecting
       if (backoffRef.current > 800) {
-        setLink("reconnecting");
+        setEsp1Status("reconnecting");
       } else {
-        setLink("connecting");
+        setEsp1Status("connecting");
       }
       
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log("✅ WebSocket Connected successfully to:", url);
+        console.log("✅ WebSocket Connected successfully to ESP1:", url);
         backoffRef.current = 800;
-        setLink("online");
+        setEsp1Status("online");
         lastReceivedRef.current = Date.now();
 
         // Start ping heartbeat
@@ -147,9 +159,9 @@ export function useTelemetry() {
         staleChecker = setInterval(() => {
           const elapsed = Date.now() - lastReceivedRef.current;
           if (elapsed > 8000) {
-            setLink("stale");
+            setEsp1Status("stale");
           } else if (ws.readyState === WebSocket.OPEN && elapsed <= 8000) {
-            setLink("online");
+            setEsp1Status("online");
           }
         }, 1000);
       };
@@ -234,7 +246,7 @@ export function useTelemetry() {
         // If an old socket's onclose fires *after* a new socket is created, 
         // it shouldn't be allowed to nullify the new socket's ref.
         if (wsRef.current === ws) {
-          setLink("offline");
+          setEsp1Status("offline");
           wsRef.current = null;
         }
         
@@ -264,24 +276,48 @@ export function useTelemetry() {
     };
   }, [url]);
 
-  // Secondary WebSocket connection for ESP3 (VL53L0X ToF Sensors: ws://192.168.1.103:8766/ws)
+  // Secondary WebSocket connection for ESP3 ToF Sensors with universal endpoints
   useEffect(() => {
-    const rawTofUrl = process.env.NEXT_PUBLIC_TOF_WS_URL ?? "ws://192.168.1.103:8766/ws";
-    const tofUrl = rawTofUrl.trim().replace(/^["']|["']$/g, "");
+    const candidateUrls = [
+      process.env.NEXT_PUBLIC_TOF_WS_URL ?? "ws://10.52.239.215:8766/ws",
+      "ws://192.168.4.1:8766/ws",    // Fixed ESP3 SoftAP IP (NEVER CHANGES)
+      "ws://esp3-tof.local:8766/ws", // Universal mDNS Hostname
+      "ws://10.52.239.215:8766/ws",
+      "ws://192.168.1.103:8766/ws",
+    ].filter(Boolean);
+
     let tofWs: WebSocket | null = null;
     let tofTimer: ReturnType<typeof setTimeout> | undefined;
+    let urlIndex = 0;
 
     const connectTof = () => {
+      const activeUrl = candidateUrls[urlIndex % candidateUrls.length];
+      console.log(`🌐 [ESP3 ToF] Connecting WebSocket (${urlIndex + 1}/${candidateUrls.length}): ${activeUrl}`);
+
       try {
-        tofWs = new WebSocket(tofUrl);
+        tofWs = new WebSocket(activeUrl);
         tofWs.onopen = () => {
-          console.log("✅ ToF Sensor WebSocket Connected to ESP3 at:", tofUrl);
-          setLink("online");
+          console.log(`✅ [ESP3 ToF] Connected successfully to: ${activeUrl}`);
+          setEsp3Status("online");
+          setFrame((curr) => {
+            const base = curr ?? mapInboundPayload({});
+            return {
+              ...base,
+              mission: {
+                ...base.mission,
+                robotOnline: true,
+              },
+              link: {
+                ...base.link,
+                quality: "online",
+              },
+            };
+          });
         };
 
         tofWs.onmessage = (ev) => {
           lastReceivedRef.current = Date.now();
-          setLink("online");
+          setEsp3Status("online");
           try {
             const raw = JSON.parse(String(ev.data));
             const data = raw.frame ? raw.frame : raw;
@@ -309,13 +345,20 @@ export function useTelemetry() {
         };
 
         tofWs.onclose = () => {
-          tofTimer = setTimeout(connectTof, 3000);
+          console.warn(`⚠️ [ESP3 ToF] WebSocket disconnected from: ${activeUrl}`);
+          setEsp3Status("offline");
+          urlIndex++;
+          tofTimer = setTimeout(connectTof, 1500);
         };
         tofWs.onerror = () => {
+          console.warn(`⚠️ [ESP3 ToF] WebSocket connection error on: ${activeUrl}`);
           tofWs?.close();
         };
-      } catch {
-        tofTimer = setTimeout(connectTof, 5000);
+      } catch (err) {
+        console.error("⚠️ [ESP3 ToF] Error initializing WebSocket:", err);
+        setEsp3Status("offline");
+        urlIndex++;
+        tofTimer = setTimeout(connectTof, 2000);
       }
     };
 

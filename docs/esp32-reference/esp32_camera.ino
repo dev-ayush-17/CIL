@@ -44,8 +44,8 @@
 #define FLASH_LED_GPIO     4
 
 // WiFi Configuration (Router / Mobile Hotspot credentials)
-const char *ssid = "CoalIndia_UGV_Net";
-const char *password = "CIL_Tunnel_2026";
+const char *ssid = "Phone 3";
+const char *password = "uvsingh987";
 
 // Static IP Configuration for ESP2 (Camera Video Streaming Module)
 IPAddress local_IP(192, 168, 1, 102);

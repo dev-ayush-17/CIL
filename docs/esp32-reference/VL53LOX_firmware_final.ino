@@ -29,10 +29,13 @@
 #include <VL53L0X.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
+#include <ESPmDNS.h>
 
 // WiFi Configuration (Router / Mobile Hotspot credentials)
 const char *ssid = "Phone 3";
 const char *password = "uvsingh987";
+const char *ssid_fallback = "moto g64 5G_3117";
+const char *password_fallback = "12345678";
 
 // Static IP Configuration for ESP3 (ToF Distance Sensor Module)
 IPAddress local_IP(192, 168, 1, 103);
@@ -55,7 +58,7 @@ bool leftSensorOK = false;
 bool rightSensorOK = false;
 bool singleSensorMode = false;
 
-// WebServer & WebSocket Server on Port 8766 (Listening on both /ws and /)
+// WebServer & WebSocket Server on Port 8766
 AsyncWebServer server(8766);
 AsyncWebSocket ws("/ws");
 AsyncWebSocket wsRoot("/");
@@ -76,7 +79,7 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println("\n=======================================================");
-  Serial.println("  UGV TUNNEL-ASSIST ROBOT — ESP3 (VL53L0X TOF SENSORS)");
+  Serial.println("  UGV TUNNEL-ASSIST ROBOT — ESP3 (DUAL VL53L0X TOF)");
   Serial.println("=======================================================");
 
   // Initialize I2C Bus at 100kHz standard speed for maximum noise immunity
@@ -130,45 +133,80 @@ void setup() {
     }
   }
 
-  // Configure Static IP (Fallback to DHCP if subnet differs)
-  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS)) {
-    Serial.println("[WARNING] Could not apply static IP; using DHCP network allocation.");
-  }
-
-  // Connect WiFi
-  WiFi.begin(ssid, password);
+  // 4. Configure WiFi in AP + STA Dual Mode
+  WiFi.mode(WIFI_AP_STA);
   WiFi.setSleep(false);
-  Serial.printf("[WiFi] Connecting to %s...", ssid);
+
+  // A. Start Dedicated Fixed Access Point (SSID: UGV_TOF_ESP3, Fixed IP: 192.168.4.1)
+  WiFi.softAP("UGV_TOF_ESP3", "12345678");
+  Serial.println("\n[WiFi AP] SoftAP Started! SSID: UGV_TOF_ESP3 | Fixed IP: 192.168.4.1");
+  Serial.println("[WebSocket AP] Fixed AP Endpoint: ws://192.168.4.1:8766/ws");
+
+  // B. Connect to Station WiFi (Primary: Phone 3, Fallback: moto g64 5G_3117)
+  WiFi.begin(ssid, password);
+  Serial.printf("[WiFi STA] Connecting to %s...", ssid);
   int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-    delay(400);
+  while (WiFi.status() != WL_CONNECTED && attempts < 15) {
+    delay(300);
     Serial.print(".");
     attempts++;
   }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\n[WiFi] Connected successfully!");
-    Serial.printf("[WiFi] ESP3 IP Address: %s\n", WiFi.localIP().toString().c_str());
-    Serial.printf("[WebSocket] Endpoint 1: ws://%s:8766/ws\n", WiFi.localIP().toString().c_str());
-    Serial.printf("[WebSocket] Endpoint 2: ws://%s:8766/\n", WiFi.localIP().toString().c_str());
-  } else {
-    Serial.println("\n[WARNING] WiFi Connection Pending. WebSocket server starting on AP mode...");
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.printf("\n[WiFi STA] Primary WiFi failed. Trying fallback: %s...", ssid_fallback);
+    WiFi.begin(ssid_fallback, password_fallback);
+    int attempts2 = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts2 < 15) {
+      delay(300);
+      Serial.print(".");
+      attempts2++;
+    }
   }
 
-  // Setup WebSocket Servers (bound to both /ws and / routes)
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n[WiFi STA] Connected successfully!");
+    Serial.printf("[WiFi STA] ESP3 IP Address: %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("[WebSocket STA] ws://%s:8766/ws (or /)\n", WiFi.localIP().toString().c_str());
+  } else {
+    Serial.println("\n[WiFi STA] Station connection pending. Access Point (192.168.4.1) is ACTIVE!");
+  }
+
+  // C. Register mDNS Hostname (esp3-tof.local)
+  if (MDNS.begin("esp3-tof")) {
+    Serial.println("[mDNS] Hostname registered! Universal Endpoint: ws://esp3-tof.local:8766/ws");
+  }
+
+  // Allow Cross-Origin Requests from browser dashboard
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "*");
+
+  // HTTP GET Health Check Endpoint
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", "UGV ESP3 ToF WebSocket Server OK");
+  });
+
+  // Attach WebSockets to server on Port 8766
   ws.onEvent(onWebSocketEvent);
   wsRoot.onEvent(onWebSocketEvent);
+  
   server.addHandler(&ws);
   server.addHandler(&wsRoot);
   server.begin();
-  Serial.println("[HTTP/WS] Server running on port 8766");
+  Serial.println("[HTTP/WS] Server running cleanly on port 8766");
 }
 
-void loop() {
-  ws.cleanupClients();
-  wsRoot.cleanupClients();
+static unsigned long lastCleanupTime = 0;
 
+void loop() {
   unsigned long now = millis();
+
+  // Cleanup disconnected clients every 2 seconds
+  if (now - lastCleanupTime >= 2000) {
+    lastCleanupTime = now;
+    ws.cleanupClients();
+    wsRoot.cleanupClients();
+  }
+
   if (now - lastBroadcastTime >= BROADCAST_INTERVAL_MS) {
     lastBroadcastTime = now;
     frameSequence++;
@@ -211,8 +249,12 @@ void loop() {
     String jsonOutput;
     serializeJson(doc, jsonOutput);
 
-    // Broadcast to all connected WebSocket clients (Digital Twin dashboard)
-    ws.textAll(jsonOutput);
-    wsRoot.textAll(jsonOutput);
+    // Broadcast to connected WebSocket clients (only when clients exist)
+    if (ws.count() > 0) ws.textAll(jsonOutput);
+    if (wsRoot.count() > 0) wsRoot.textAll(jsonOutput);
+
+    // Print ToF Sensor Distance Readings to Serial Monitor
+    Serial.printf("[ToF ESP3] Frame #%lu | Left: %.2f m | Right: %.2f m | Clients: %u\n",
+                  frameSequence, leftM, rightM, (unsigned int)(ws.count() + wsRoot.count()));
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bezel } from "@/components/ui/bezel";
 import { useTelemetryContext } from "@/lib/telemetry/telemetry-context";
 import type { CameraMeta } from "@/lib/telemetry/schema";
@@ -12,7 +12,7 @@ export function CameraFeeds() {
   return (
     <div className="grid min-w-0 grid-cols-1 gap-[var(--space-sm)] md:grid-cols-2">
       <FeedSlot
-        title="Front RGB"
+        title="Front RGB (ESP32-CAM)"
         meta={frame?.cameras.rgb}
         mode="rgb"
         active={vision === "rgb"}
@@ -33,7 +33,7 @@ function FeedSlot({
   title,
   meta,
   mode,
-  active,
+  active: _active,
   streamUrl,
 }: {
   title: string;
@@ -42,40 +42,137 @@ function FeedSlot({
   active: boolean;
   streamUrl: string;
 }) {
-  const activeUrl = streamUrl || (mode === "rgb" ? (process.env.NEXT_PUBLIC_CAMERA_WS_URL ? "http://192.168.1.102:81/stream" : "") : "");
+  const [camIp, setCamIp] = useState<string>("10.232.110.215");
+  const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
+  const [wsFps, setWsFps] = useState<number>(0);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+
+  // WebSocket Live Stream Connection for ESP32-CAM (Port 8765)
+  useEffect(() => {
+    if (mode !== "rgb") return;
+
+    let ws: WebSocket | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let frameCount = 0;
+    let lastFpsTime = Date.now();
+
+    const candidateUrls = [
+      `ws://${camIp}:8765/ws`,
+      `ws://${camIp}:8765`,
+      "ws://10.232.110.215:8765/ws",
+      "ws://192.168.4.1:8765/ws",
+    ];
+    let urlIdx = 0;
+
+    const connectWs = () => {
+      const activeWsUrl = candidateUrls[urlIdx % candidateUrls.length];
+      console.log(`📷 [ESP32-CAM WS] Attempting connection to: ${activeWsUrl}`);
+
+      try {
+        ws = new WebSocket(activeWsUrl);
+        ws.binaryType = "blob";
+
+        ws.onopen = () => {
+          console.log(`✅ [ESP32-CAM WS] Connected to: ${activeWsUrl}`);
+          setIsWsConnected(true);
+        };
+
+        ws.onmessage = (ev) => {
+          setIsWsConnected(true);
+          if (ev.data instanceof Blob) {
+            const nextUrl = URL.createObjectURL(ev.data);
+            setBlobUrl((prev) => {
+              if (prev && prev.startsWith("blob:")) URL.revokeObjectURL(prev);
+              return nextUrl;
+            });
+
+            frameCount++;
+            const now = Date.now();
+            if (now - lastFpsTime >= 1000) {
+              setWsFps(Math.round((frameCount * 1000) / (now - lastFpsTime)));
+              frameCount = 0;
+              lastFpsTime = now;
+            }
+          }
+        };
+
+        ws.onclose = () => {
+          setIsWsConnected(false);
+          urlIdx++;
+          timer = setTimeout(connectWs, 2000);
+        };
+
+        ws.onerror = () => {
+          setIsWsConnected(false);
+          ws?.close();
+        };
+      } catch (_err) {
+        setIsWsConnected(false);
+        urlIdx++;
+        timer = setTimeout(connectWs, 3000);
+      }
+    };
+
+    connectWs();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      ws?.close();
+    };
+  }, [mode, camIp]);
+
+  const fallbackHttpUrl = `http://${camIp}:81/stream`;
+  const activeUrl = blobUrl || streamUrl || (mode === "rgb" ? fallbackHttpUrl : "");
 
   return (
     <Bezel
       title={title}
-      stamp={`${meta?.recording ? "REC" : "STBY"}  ${meta?.fps ?? "—"} FPS  ${meta?.resolution ?? "—"}`}
+      stamp={`${isWsConnected ? `WS 8765 LIVE (${wsFps || 24} FPS)` : meta?.recording ? "REC" : "STBY"}  ${meta?.resolution ?? "VGA"}`}
     >
       <div className="relative aspect-video min-w-0 overflow-hidden border border-[var(--color-rule)] bg-[var(--color-paper)]">
-        {activeUrl ? (
-          activeUrl.endsWith(".mp4") || activeUrl.startsWith("blob:") ? (
-            <video className="h-full w-full object-cover" src={activeUrl} autoPlay muted playsInline />
-          ) : (
-            <img
-              className="h-full w-full object-cover"
-              src={activeUrl}
-              alt={`${title} live stream feed`}
-              onError={(e) => {
-                // If stream fails to connect, fallback gracefully to animated canvas view
-                e.currentTarget.style.display = "none";
-              }}
-            />
-          )
+        {mode === "rgb" && activeUrl ? (
+          <img
+            ref={imgRef}
+            className="h-full w-full object-cover"
+            src={activeUrl}
+            alt={`${title} live stream feed`}
+            onError={(e) => {
+              // If stream fails, fallback to canvas mockup
+              e.currentTarget.style.display = "none";
+            }}
+          />
+        ) : mode === "rgb" && isWsConnected && blobUrl ? (
+          <img className="h-full w-full object-cover" src={blobUrl} alt="ESP32-CAM WS Feed" />
         ) : (
-          <MockTunnel mode={mode} fps={meta?.fps ?? 24} />
+          <MockTunnel mode={mode} fps={wsFps || meta?.fps || 24} />
         )}
         <div className="pointer-events-none absolute inset-0 border border-[transparent] bg-[linear-gradient(180deg,transparent_70%,oklch(12%_0.01_72_/_0.45))]" />
-        <p className="absolute left-[var(--space-xs)] top-[var(--space-xs)] label" style={{ color: active ? "var(--color-accent)" : "var(--color-muted)" }}>
-          {mode === "rgb" ? "CAM_RGB_FWD (192.168.1.102)" : "CAM_THM_FWD"}
-        </p>
-        {meta?.recording ? (
-          <p className="absolute right-[var(--space-xs)] top-[var(--space-xs)] num text-[length:var(--text-xs)] text-[var(--color-hazard)]">
-            REC
-          </p>
-        ) : null}
+        
+        {/* Status Badge */}
+        <div className="absolute left-[var(--space-xs)] top-[var(--space-xs)] flex items-center gap-1.5 font-mono text-[10px]">
+          {mode === "rgb" ? (
+            <span className={`px-1.5 py-0.5 rounded font-bold ${isWsConnected ? "bg-emerald-950 text-emerald-400 border border-emerald-600" : "bg-amber-950 text-amber-400 border border-amber-600"}`}>
+              {isWsConnected ? `🟢 ESP32-CAM WS: ${camIp}:8765` : `🟡 ESP32-CAM WS: CONNECTING (${camIp})`}
+            </span>
+          ) : (
+            <span className="text-[var(--color-muted)]">CAM_THM_FWD</span>
+          )}
+        </div>
+
+        {/* IP Quick Input Field for ESP32 Camera */}
+        {mode === "rgb" && (
+          <div className="absolute right-[var(--space-xs)] bottom-[var(--space-xs)] flex items-center gap-1 bg-black/75 px-1.5 py-1 rounded border border-slate-700">
+            <span className="text-[9px] font-mono text-slate-400">CAM IP:</span>
+            <input
+              type="text"
+              className="w-24 bg-slate-900 text-cyan-300 font-mono text-[10px] px-1 rounded border border-slate-600 focus:outline-none focus:border-cyan-400"
+              value={camIp}
+              onChange={(e) => setCamIp(e.target.value)}
+              placeholder="10.232.110.215"
+            />
+          </div>
+        )}
       </div>
     </Bezel>
   );
@@ -125,3 +222,4 @@ function MockTunnel({ mode, fps }: { mode: "rgb" | "thermal"; fps: number }) {
 
   return <canvas ref={ref} className="h-full w-full" />;
 }
+
