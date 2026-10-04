@@ -10,7 +10,7 @@ export function CameraFeeds() {
   const vision = frame?.control.vision ?? "rgb";
 
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-[var(--space-sm)] md:grid-cols-2">
+    <div className="flex min-w-0 flex-col gap-[var(--space-sm)] w-full">
       <FeedSlot
         title="Front RGB (ESP32-CAM)"
         meta={frame?.cameras.rgb}
@@ -130,7 +130,7 @@ function FeedSlot({
       title={title}
       stamp={`${isWsConnected ? `WS 8765 LIVE (${wsFps || 24} FPS)` : meta?.recording ? "REC" : "STBY"}  ${meta?.resolution ?? "VGA"}`}
     >
-      <div className="relative aspect-video min-w-0 overflow-hidden border border-[var(--color-rule)] bg-[var(--color-paper)]">
+      <div className="relative aspect-video min-w-0 min-h-[380px] sm:min-h-[480px] lg:min-h-[360px] overflow-hidden border border-[var(--color-rule)] bg-[var(--color-paper)] w-full">
         {mode === "rgb" && activeUrl ? (
           <img
             ref={imgRef}

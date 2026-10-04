@@ -4,7 +4,7 @@ import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { CameraFeeds } from "@/components/cameras/camera-feeds";
 import { Bezel } from "@/components/ui/bezel";
 import { useTelemetryContext } from "@/lib/telemetry/telemetry-context";
-import type { ControlCommand, LightLevel, SpeedGear, VisionMode } from "@/lib/telemetry/schema";
+import type { ControlCommand, SpeedGear } from "@/lib/telemetry/schema";
 import { OperatorNotes } from "@/components/control/operator-notes";
 
 // Custom hook to handle continuous press-and-hold loop for D-Pads and Gimbal pads
@@ -86,14 +86,6 @@ export function RobotControl() {
   const pendingPosture = getPendingCommand((cmd) => cmd.type === "set_posture");
   const postureUnconfirmed = (pendingPreset?.unconfirmed || pendingPosture?.unconfirmed) ?? false;
 
-  const pendingLights = getPendingCommand((cmd) => cmd.type === "set_lights");
-  const lightsVal = pendingLights && pendingLights.command.type === "set_lights" ? pendingLights.command.intensity : c?.lights;
-  const lightsUnconfirmed = pendingLights?.unconfirmed ?? false;
-
-  const pendingVision = getPendingCommand((cmd) => cmd.type === "set_vision");
-  const visionVal = pendingVision && pendingVision.command.type === "set_vision" ? pendingVision.command.mode : c?.vision;
-  const visionUnconfirmed = pendingVision?.unconfirmed ?? false;
-
   const pendingSpeed = getPendingCommand((cmd) => cmd.type === "set_speed");
   const speedVal = pendingSpeed && pendingSpeed.command.type === "set_speed" ? pendingSpeed.command.speed : c?.speed;
   const speedUnconfirmed = pendingSpeed?.unconfirmed ?? false;
@@ -110,13 +102,6 @@ export function RobotControl() {
     sendCommand,
     (dir) => ({ type: "walk", dir: dir as "stop" | "fwd" | "back" | "left" | "right" }),
     { type: "walk", dir: "stop" }
-  );
-
-  // 3. Continuous Gimbal Hold Loop
-  const gimbalHold = useHoldCommand(
-    sendCommand,
-    (dir) => ({ type: "gimbal", dir: dir as "up" | "down" | "left" | "right" | "center" }),
-    { type: "gimbal", dir: "center" }
   );
 
   // Reconciled Values for visual state
@@ -259,47 +244,6 @@ export function RobotControl() {
             onHold={walkHold}
           />
         </Bezel>
-
-        {/* Lighting */}
-        <Bezel title="Lighting" stamp={lightsUnconfirmed ? "WAITING FOR ACK ⚠️" : undefined}>
-          <div className="grid grid-cols-4">
-            {(["off", "low", "med", "high"] as LightLevel[]).map((intensity) => (
-              <button
-                key={intensity}
-                type="button"
-                className={`latch ${lightsVal === intensity ? "is-on" : ""}`}
-                disabled={disabled}
-                aria-pressed={lightsVal === intensity}
-                onClick={() => sendCommand({ type: "set_lights", intensity })}
-              >
-                {intensity}
-              </button>
-            ))}
-          </div>
-        </Bezel>
-
-        {/* Gimbal */}
-        <Bezel title="Gimbal" stamp={c ? `P ${c.gimbal.pitch}  Y ${c.gimbal.yaw}` : "—"}>
-          <GimbalPad disabled={disabled} onHold={gimbalHold} />
-        </Bezel>
-
-        {/* Vision Mode */}
-        <Bezel title="Vision mode" stamp={visionUnconfirmed ? "WAITING FOR ACK ⚠️" : undefined}>
-          <div className="grid grid-cols-3">
-            {(["rgb", "thermal", "ir"] as VisionMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={`latch ${visionVal === mode ? "is-on" : ""}`}
-                disabled={disabled}
-                aria-pressed={visionVal === mode}
-                onClick={() => sendCommand({ type: "set_vision", mode })}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
-        </Bezel>
       </div>
       <CameraFeeds />
       <OperatorNotes />
@@ -366,62 +310,7 @@ function DPad({
   );
 }
 
-function GimbalPad({
-  disabled,
-  onHold,
-}: {
-  disabled: boolean;
-  onHold: { startHold: (dir: string) => void; stopHold: () => void };
-}) {
-  return (
-    <div className="mx-auto grid w-[8.5rem] grid-cols-3 gap-[var(--space-2xs)]">
-      <span />
-      <PadBtn
-        disabled={disabled}
-        on={false}
-        onStart={() => onHold.startHold("up")}
-        onStop={onHold.stopHold}
-      >
-        Up
-      </PadBtn>
-      <span />
-      <PadBtn
-        disabled={disabled}
-        on={false}
-        onStart={() => onHold.startHold("left")}
-        onStop={onHold.stopHold}
-      >
-        L
-      </PadBtn>
-      <PadBtn
-        disabled={disabled}
-        on={false}
-        onStart={() => onHold.startHold("center")}
-        onStop={onHold.stopHold}
-      >
-        Ctr
-      </PadBtn>
-      <PadBtn
-        disabled={disabled}
-        on={false}
-        onStart={() => onHold.startHold("right")}
-        onStop={onHold.stopHold}
-      >
-        R
-      </PadBtn>
-      <span />
-      <PadBtn
-        disabled={disabled}
-        on={false}
-        onStart={() => onHold.startHold("down")}
-        onStop={onHold.stopHold}
-      >
-        Dn
-      </PadBtn>
-      <span />
-    </div>
-  );
-}
+
 
 function PadBtn({
   children,
