@@ -4,13 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { Bezel } from "@/components/ui/bezel";
 import { useTelemetryContext } from "@/lib/telemetry/telemetry-context";
 import type { CameraMeta } from "@/lib/telemetry/schema";
+import infraredImg from "./infrared.jpeg";
 
 export function CameraFeeds() {
   const { frame } = useTelemetryContext();
   const vision = frame?.control.vision ?? "rgb";
 
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-[var(--space-sm)] md:grid-cols-2">
+    <div className="flex min-w-0 flex-col gap-[var(--space-sm)] w-full">
       <FeedSlot
         title="Front RGB (ESP32-CAM)"
         meta={frame?.cameras.rgb}
@@ -42,7 +43,7 @@ function FeedSlot({
   active: boolean;
   streamUrl: string;
 }) {
-  const [camIp, setCamIp] = useState<string>("10.232.110.215");
+  const [camIp, setCamIp] = useState<string>("esp32cam.local");
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [wsFps, setWsFps] = useState<number>(0);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -60,7 +61,7 @@ function FeedSlot({
     const candidateUrls = [
       `ws://${camIp}:8765/ws`,
       `ws://${camIp}:8765`,
-      "ws://10.232.110.215:8765/ws",
+      "ws://esp3cam.local:8765/ws",
       "ws://192.168.4.1:8765/ws",
     ];
     let urlIdx = 0;
@@ -130,7 +131,7 @@ function FeedSlot({
       title={title}
       stamp={`${isWsConnected ? `WS 8765 LIVE (${wsFps || 24} FPS)` : meta?.recording ? "REC" : "STBY"}  ${meta?.resolution ?? "VGA"}`}
     >
-      <div className="relative aspect-video min-w-0 overflow-hidden border border-[var(--color-rule)] bg-[var(--color-paper)]">
+      <div className="relative aspect-video min-w-0 min-h-[380px] sm:min-h-[480px] lg:min-h-[360px] overflow-hidden border border-[var(--color-rule)] bg-[var(--color-paper)] w-full">
         {mode === "rgb" && activeUrl ? (
           <img
             ref={imgRef}
@@ -144,6 +145,8 @@ function FeedSlot({
           />
         ) : mode === "rgb" && isWsConnected && blobUrl ? (
           <img className="h-full w-full object-cover" src={blobUrl} alt="ESP32-CAM WS Feed" />
+        ) : mode === "thermal" ? (
+          <img className="h-full w-full object-cover" src={infraredImg.src} alt="Thermal Camera Feed" />
         ) : (
           <MockTunnel mode={mode} fps={wsFps || meta?.fps || 24} />
         )}
@@ -169,7 +172,7 @@ function FeedSlot({
               className="w-24 bg-slate-900 text-cyan-300 font-mono text-[10px] px-1 rounded border border-slate-600 focus:outline-none focus:border-cyan-400"
               value={camIp}
               onChange={(e) => setCamIp(e.target.value)}
-              placeholder="10.232.110.215"
+              placeholder="esp3cam.local"
             />
           </div>
         )}

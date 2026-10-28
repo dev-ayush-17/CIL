@@ -5,6 +5,7 @@
 #include <WebSocketsServer.h>
 #include <ArduinoOTA.h>
 #include <Preferences.h>
+#include <ESPmDNS.h>
 
 // ==========================================
 // WIFI & IP CONFIGURATION
@@ -324,6 +325,14 @@ void setup() {
   Serial.println("\n✅ Connected to Wi-Fi!");
   Serial.print("🌐 Open this IP in your phone's browser: http://");
   Serial.println(WiFi.localIP());
+
+  if (!MDNS.begin("minidog")) {
+    Serial.println("Error setting up MDNS responder!");
+  } else {
+    Serial.println("mDNS responder started at minidog.local");
+    MDNS.addService("http", "tcp", 80);
+    MDNS.addService("http", "tcp", 81);
+  }
 
   ArduinoOTA.setHostname("MiniDog-Controller");
   ArduinoOTA.begin();

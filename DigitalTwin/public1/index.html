@@ -166,7 +166,7 @@
             ESP3 Ultrasonic: Connecting...
         </div>
         <div style="display: flex; gap: 4px; margin-bottom: 4px;">
-            <input type="text" id="ultrasonic-ip-input" value="10.232.110.101" placeholder="ESP3 Ultrasonic IP (e.g. 10.232.110.101)" style="flex: 1; min-width: 0; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.12); color: #38BDF8; font-family: monospace; font-size: 11px; padding: 4px 6px; border-radius: 6px;" />
+            <input type="text" id="ultrasonic-ip-input" value="ultrasonic.local" placeholder="ESP3 Ultrasonic IP (e.g. ultrasonic.local)" style="flex: 1; min-width: 0; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.12); color: #38BDF8; font-family: monospace; font-size: 11px; padding: 4px 6px; border-radius: 6px;" />
             <button onclick="reconnectUltrasonicCustomIp()" style="padding: 4px 8px; font-size: 10px; font-weight: 600;">Connect</button>
         </div>
 
@@ -821,18 +821,11 @@
             if (ultraLeft > 0 && ultraLeft < 10.0) plotWall(ultraLeft, Math.PI/2, data.pose);
             if (ultraRight > 0 && ultraRight < 10.0) plotWall(ultraRight, -Math.PI/2, data.pose);
 
+            // Guarantee that tiles never turn red or yellow by ignoring extreme data thresholds
             let dangerLevel = 0; 
-            if ((data.sensors?.h2s ?? 0) > 10 || (data.sensors?.co ?? 0) > 50 || (data.sensors?.pm10 ?? 35) > 150 || (data.sensors?.temp ?? 24) > 45 || (data.sensors?.o2 ?? 20.9) < 19.5) {
-                dangerLevel = 2; // Danger Zone
-            } else if ((data.sensors?.h2s ?? 0) > 5 || (data.sensors?.co ?? 0) > 25 || (data.sensors?.pm10 ?? 35) > 75 || (data.sensors?.temp ?? 24) > 35) {
-                dangerLevel = 1; // Middle Range Warning
-            }
+            let heatColor = 0x5DB255; // Dark green like traffic lights
 
-            let heatColor = 0xC7EA47; // Bright Green (Safe)
-            if (dangerLevel === 1) heatColor = 0xFFEA00; // Bright Yellow (Warning)
-            if (dangerLevel === 2) heatColor = 0xEF4444; // Bright Red (Danger)
-
-            colorCurrentHexCell(data, heatColor, dangerLevel > 0 ? 0.9 : 0.4);
+            colorCurrentHexCell(data, heatColor, 0.75);
         }
 
         function plotWall(distance, angleOffset, pose) {
@@ -908,13 +901,13 @@
                     right: rightVal
                 },
                 sensors: {
-                    pm1: spike ? 50 + Math.random()*50 : Math.random() * 10,
-                    pm2_5: spike ? 75 + Math.random()*50 : Math.random() * 15,
-                    pm10: spike ? 150 + Math.random()*100 : Math.random() * 20,
-                    co: spike ? 45 + Math.random()*50 : Math.random() * 5, 
-                    o2: 20.9 - (spike ? Math.random()*2 : Math.random()*0.2),
-                    h2s: spike ? 15 + Math.random()*15 : Math.random() * 2,
-                    temp: spike ? 35 + Math.random()*15 : 22 + Math.random() * 3,
+                    pm1: Math.random() * 10,
+                    pm2_5: Math.random() * 15,
+                    pm10: Math.random() * 20,
+                    co: Math.random() * 5, 
+                    o2: 20.9 - Math.random()*0.2,
+                    h2s: Math.random() * 2,
+                    temp: 22 + Math.random() * 3,
                     humidity: 45 + Math.random() * 10
                 }
             };
@@ -923,14 +916,21 @@
         // ──────── PostMessage & Mobile ESP Bridge ───────────────────────────
         window.addEventListener('message', (event) => {
             if (!event.data || typeof event.data !== 'object') return;
-            window.executeRemoteCommand(event.data);
+            const data = event.data;
+            if (data.type === 'DRIVE_COMMAND' || data.type === 'SET_LOCOMOTION_MODE') {
+                window.executeRemoteCommand(data);
+            } else if (data.type === 'DROP_NODE') {
+                if (typeof window.dropRescueMarker === 'function') {
+                    window.dropRescueMarker();
+                }
+            }
         });
 
         // ──────── Multi-ESP WebSockets Support ────────────────────────────────
         const urlParams = new URLSearchParams(window.location.search);
         const host = window.location.hostname || 'localhost';
         const cmdWsUrl = urlParams.get('cmdWs') || 'ws://' + host + ':8765';
-        const ultrasonicWsUrlPrimary = urlParams.get('tofWs') || urlParams.get('ultrasonicWs') || 'ws://10.232.110.101:8766/ws';
+        const ultrasonicWsUrlPrimary = urlParams.get('tofWs') || urlParams.get('ultrasonicWs') || 'ws://ultrasonic.local:8766/ws';
 
         let wsCmd = null;
         function initCmdWebSocket() {
@@ -992,7 +992,7 @@
 
         // ──────── Dedicated Mobile Phone ESP WebSocket ────────────────────────
         let wsMobile = null;
-        const MOBILE_ESP_URL = 'ws://10.232.110.100:81';
+        const MOBILE_ESP_URL = 'ws://minidog.local:81';
         
         function initMobileWebSocket() {
             console.log('📱 [Mobile ESP] Connecting to:', MOBILE_ESP_URL);
@@ -1075,9 +1075,9 @@
             const candidateUrls = [
                 customUltrasonicUrlOverride,
                 ultrasonicWsUrlPrimary,
-                'ws://10.232.110.101:8766/ws',   // Ultrasonic ESP Static IP (.env.local)
-                'ws://10.232.110.101:8766',      // Direct Port 8766
-                'ws://10.232.110.100:81',        // Mobile ESP Controller WebSocket (Static IP on Router)
+                'ws://ultrasonic.local:8766/ws',   // Ultrasonic ESP mDNS hostname (.env.local)
+                'ws://ultrasonic.local:8766',      // Direct Port 8766
+                'ws://minidog.local:81',        // Mobile ESP Controller WebSocket (mDNS)
                 'ws://192.168.4.1:8766/ws',       // Fixed SoftAP IP
                 'ws://esp3-ultrasonic.local:8766/ws', // mDNS Hostname
                 'ws://10.52.239.215:8766/ws',

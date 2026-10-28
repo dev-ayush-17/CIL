@@ -6,6 +6,7 @@
 #include <WiFi.h>
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h> // Ensure ArduinoJson library is installed if using JSON object builder
+#include <ESPmDNS.h>
 
 // ==========================================
 // WIFI CONFIGURATION
@@ -122,6 +123,14 @@ void setup() {
   Serial.println("\n✅ Wi-Fi Connected!");
   Serial.print("🌐 ESP32 IP Address: ");
   Serial.println(WiFi.localIP());
+
+  if (!MDNS.begin("ultrasonic")) {
+    Serial.println("Error setting up MDNS responder!");
+  } else {
+    Serial.println("mDNS responder started at ultrasonic.local");
+    // Add service to MDNS-SD
+    MDNS.addService("http", "tcp", 8766);
+  }
 
   // Start WebSocket Server
   webSocket.begin();

@@ -49,7 +49,7 @@ const state: TelemetryFrame = {
     batteryPct: 84,
     signalPct: 92,
     snrDbm: -65,
-    nodesDropped: 3,
+    nodesDropped: 0,
     nodesTotal: 10,
   },
   power: {
@@ -200,11 +200,7 @@ function tick() {
   state.power.currentA = walk(state.power.currentA, moving ? 10 : 6, moving ? 18 : 13, 0.4);
   state.link.signalPct = walk(state.link.signalPct, 48, 99, 1.8);
   state.link.snrDbm = walk(state.link.snrDbm, -82, -48, 1.2);
-  state.link.nodesDropped = clamp(
-    Math.round(walk(state.link.nodesDropped, 0, 8, 0.4)),
-    0,
-    state.link.nodesTotal,
-  );
+  state.link.nodesDropped = 0; // Controlled by frontend
 
   const mb = state.thermal.mainboard;
   mb.currentC = walk(mb.currentC, 36, 58, 0.45);
@@ -214,19 +210,18 @@ function tick() {
   state.thermal.ambientC = walk(state.thermal.ambientC, 22, 36, 0.25);
   state.thermal.humidityPct = walk(state.thermal.humidityPct, 48, 92, 0.6);
 
-  const spike = state.seq % 47 === 0;
-  state.gas.ch4Ppm = spike ? walk(6.2, 5.4, 8.8, 0.6) : walk(state.gas.ch4Ppm, 0.01, 2.4, 0.18);
-  state.gas.ch4Warn = state.gas.ch4Ppm >= state.gas.ch4WarnThresholdPpm * 0.2;
-  state.gas.ch4Crit = state.gas.ch4Ppm >= state.gas.ch4WarnThresholdPpm;
-  state.gas.coPpm = walk(state.gas.coPpm, 0.4, 9, 0.35);
+  state.gas.ch4Ppm = walk(state.gas.ch4Ppm, 1.0, 1.5, 0.05);
+  state.gas.ch4Warn = false;
+  state.gas.ch4Crit = false;
+  state.gas.coPpm = walk(state.gas.coPpm, 0.4, 3, 0.2);
   state.gas.coStats.currentC = state.gas.coPpm;
   state.gas.coStats.minC = Math.min(state.gas.coStats.minC, state.gas.coPpm);
   state.gas.coStats.maxC = Math.max(state.gas.coStats.maxC, state.gas.coPpm);
   state.gas.coStats.avgC = state.gas.coStats.avgC * 0.9 + state.gas.coPpm * 0.1;
 
-  state.air.pm1 = walk(state.air.pm1, 4, 28, 1.1);
-  state.air.pm25 = walk(state.air.pm25, 10, 55, 1.6);
-  state.air.pm10 = walk(state.air.pm10, 18, 80, 2.1);
+  state.air.pm1 = walk(state.air.pm1, 2, 8, 0.5);
+  state.air.pm25 = walk(state.air.pm25, 4, 15, 0.8);
+  state.air.pm10 = walk(state.air.pm10, 8, 25, 1.2);
 
   state.lidar.leftM = walk(state.lidar.leftM, 0.18, 2.4, 0.08);
   state.lidar.rightM = walk(state.lidar.rightM, 0.18, 2.4, 0.08);
@@ -246,56 +241,9 @@ function tick() {
     pushLog("NAV", `CHAINAGE ${state.mission.distanceM.toFixed(1)} m  SECTOR ${state.mission.sector}`);
   }
 
-  const nextAlerts: AlertEntry[] = [];
-  if (state.gas.ch4Crit) {
-    nextAlerts.push({
-      id: `ch4-${state.seq}`,
-      ts: clock(),
-      severity: "hazard",
-      code: "GAS-CH4",
-      message: `CH4 ${state.gas.ch4Ppm.toFixed(2)} ppm above warn ${state.gas.ch4WarnThresholdPpm}`,
-    });
-    if (state.seq % 5 === 0) pushLog("GAS", "CH4 THRESHOLD BREACH");
-  } else if (state.gas.ch4Warn) {
-    nextAlerts.push({
-      id: `ch4w-${state.seq}`,
-      ts: clock(),
-      severity: "caution",
-      code: "GAS-CH4",
-      message: `CH4 climbing ${state.gas.ch4Ppm.toFixed(2)} ppm`,
-    });
-  }
-  if (state.lidar.rightM < 0.35 || state.lidar.leftM < 0.35) {
-    nextAlerts.push({
-      id: `clr-${state.seq}`,
-      ts: clock(),
-      severity: "caution",
-      code: "LIDAR-CLR",
-      message: `Clearance L ${state.lidar.leftM.toFixed(2)} m  R ${state.lidar.rightM.toFixed(2)} m`,
-    });
-  }
-  if (state.link.quality === "degraded") {
-    nextAlerts.push({
-      id: `lnk-${state.seq}`,
-      ts: clock(),
-      severity: "caution",
-      code: "COM-SNR",
-      message: `Link degraded ${state.link.snrDbm.toFixed(0)} dBm`,
-    });
-  }
-  alerts.splice(0, alerts.length, ...nextAlerts.slice(0, 6));
-  if (mb.currentC > 52) {
-    alerts.push({
-      id: `tmp-${state.seq}`,
-      ts: clock(),
-      severity: "caution",
-      code: "MB-TEMP",
-      message: `Mainboard ${mb.currentC.toFixed(1)} °C`,
-    });
-  }
-
   state.log = [...logs];
-  state.alerts = [...alerts];
+  // Clear any persistent alerts for the clean demo
+  state.alerts = [];
 }
 
 const wss = new WebSocketServer({ port: PORT });
@@ -378,28 +326,7 @@ wss.on("connection", (socket) => {
 setInterval(() => {
   tick();
   
-  // Periodically emit asynchronous device logs/faults (15% chance per tick)
-  if (Math.random() < 0.15 && sockets.size > 0) {
-    const logTypes: Array<{ severity: "info" | "caution" | "hazard"; source: string; message: string }> = [
-      { severity: "caution", source: "PWR", message: "BATTERY_TEMPERATURE_ELEVATED" },
-      { severity: "info", source: "SYS", message: "AUTONOMOUS_TUNNEL_MAPPING_CALIBRATED" },
-      { severity: "caution", source: "GAS", message: "CO_LEVELS_TEMPORARILY_PEAKING" },
-      { severity: "hazard", source: "LDR", message: "LIDAR_SENSORS_DIRT_COATING_DETECTED" },
-      { severity: "info", source: "COM", message: "ROUTER_SIGNAL_OPTIMIZED" },
-    ];
-    const choice = logTypes[Math.floor(Math.random() * logTypes.length)];
-    const deviceLog = {
-      type: "log",
-      ts: clock(),
-      severity: choice.severity,
-      source: choice.source,
-      message: choice.message,
-    };
-    const payload = JSON.stringify(deviceLog);
-    for (const s of sockets) {
-      if (s.readyState === s.OPEN) s.send(payload);
-    }
-  }
+  // No random hazard device logs anymore
 
   // Periodic Telemetry Frames broadcast
   const payload = JSON.stringify({ type: "frame", frame: state });

@@ -1,157 +1,191 @@
-# UGV Tunnel-Assist Robot Dashboard (CIL MIN Hackathon)
+# UGV Tunnel Monitoring and Control Dashboard
 
-An industrial field-ops console designed from scratch for Coal India Ltd's autonomous tunneling division. This dashboard allows real-time telemetry monitoring, mission logging, remote robot control, and interactive 3D mapping while the unmanned ground vehicle (UGV) is inside an active mine tunnel.
+A real-time monitoring and control dashboard for an Unmanned Ground Vehicle (UGV) designed for underground tunnel exploration and industrial inspection. The application provides live telemetry monitoring, mission tracking, remote robot control, environmental sensing, camera feeds, and interactive 3D visualization.
 
-## Visual Design Identity
-Built on a custom **Machined Steel & Warm Amber** theme, this console deviates from typical SaaS mockups and sci-fi neon aesthetics in favor of a rugged, high-contrast field terminal. Features include:
-- Compact condensed typography (`Barlow Condensed` for labels/headers, `IBM Plex Mono` for tabular telemetry and logs).
-- Machined panel borders, bevel details, calibration grid lines, and crosshair overlays.
-- Flat solid layouts (no rounded SaaS cards, no neon-cyan glows, no floating blurred orbs).
+The dashboard communicates with an ESP32-based hardware system through WebSockets, enabling bidirectional communication between the robot and the operator console.
 
----
+## Features
 
-## 1. Quick Start
+- **Real-Time Telemetry:** Monitor battery level, voltage, current, temperature, speed, and communication status.
+- **Remote Robot Control:** Control movement, operating modes, lighting, and robot posture through an interactive interface.
+- **Environmental Monitoring:** Track methane (CH₄), carbon monoxide (CO), particulate matter, humidity, and water detection.
+- **Live Camera Feeds:** Support RGB and thermal camera streams.
+- **3D Robot Visualization:** Display the robot model and support interactive visualization.
+- **Mission Tracking:** Monitor mission duration, tunnel progress, distance traveled, and operational status.
+- **Alert Management:** Display sensor warnings, communication failures, and system faults.
+- **Operator Logging:** Record operational notes, commands, and mission events.
+- **Emergency Stop:** Provide an emergency-stop interface for halting robot movement.
+- **WebSocket Communication:** Exchange telemetry data and control commands with the hardware system.
+- **Mock Telemetry Server:** Test dashboard functionality without requiring physical hardware.
 
-Run the application locally from a clean clone:
+## Visual Design
+
+The dashboard uses a **Machined Steel and Warm Amber** visual theme inspired by industrial control systems.
+
+Design characteristics include:
+
+- Condensed typography using Barlow Condensed.
+- Monospaced telemetry and logs using IBM Plex Mono.
+- High-contrast panels with machined borders and bevel details.
+- Calibration grids, measurement markers, and crosshair overlays.
+- A compact, information-dense layout optimized for monitoring and control.
+
+The interface avoids excessive rounded cards, neon effects, and decorative visual elements to maintain a practical industrial appearance.
+
+## Tech Stack
+
+- **Frontend:** Next.js, React, TypeScript
+- **Styling:** CSS, Tailwind CSS, custom design tokens
+- **Charts:** Recharts
+- **Communication:** WebSockets
+- **Hardware Interface:** ESP32
+- **3D Visualization:** Model Viewer
+- **Gas Sensors:** MQ-4 methane sensor and MQ-7 carbon monoxide sensor
+
+## Project Structure
+
+```text
+├── app/
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
+├── components/
+│   ├── alerts/
+│   ├── analytics/
+│   ├── cameras/
+│   ├── control/
+│   ├── health/
+│   ├── environment/
+│   ├── shell/
+│   └── ui/
+├── lib/
+│   └── telemetry/
+│       ├── schema.ts
+│       ├── mapper.ts
+│       ├── use-telemetry.ts
+│       └── mock-server/
+├── public/
+│   └── models/
+│       └── robot.glb
+├── docs/
+│   ├── ws-protocol.md
+│   └── esp32-reference/
+│       └── firmware.ino
+├── tokens.css
+└── package.json
+```
+
+## Getting Started
+
+### Prerequisites
+
+Make sure you have the following installed:
+
+- Node.js and npm
+- Git
+- A modern web browser
+
+An ESP32 is optional when using the mock telemetry server.
+
+### Installation
+
+Clone the repository and navigate to the project directory:
 
 ```bash
-# 1. Install dependencies (Next.js, Recharts, ws, model-viewer)
+git clone <repository-url>
+cd <project-directory>
 npm install
+```
 
-# 2. Run the mock WebSocket telemetry server (ports to ws://127.0.0.1:8765)
+### Run the Mock Telemetry Server
+
+Open a terminal and run:
+
+```bash
 npm run mock:telemetry
+```
 
-# 3. Start the Next.js development server (in a separate terminal)
+The mock WebSocket server runs at:
+
+```text
+ws://127.0.0.1:8765
+```
+
+### Start the Development Server
+
+Open a separate terminal and execute:
+
+```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser to view the console.
+Open the dashboard at:
 
----
+http://localhost:3000
 
-## 2. Project Folder Structure
+## Hardware Integration
 
-```
-├── app/
-│   ├── globals.css         # Global tailwind imports and custom style classes
-│   ├── layout.tsx          # Font optimization (Barlow Condensed & IBM Plex Mono)
-│   └── page.tsx            # App entry point (wraps shell inside telemetry & view providers)
-├── components/
-│   ├── alerts/             # Active fault list panel
-│   ├── analytics/          # Live charts, radial dials, and 3D model viewer
-│   ├── cameras/            # Simulated/live camera streams (RGB and Thermal)
-│   ├── control/            # Robot operations pads, presets, lighting, operator logs
-│   ├── health/             # Telemetry indicators, LIDAR distance bars, and battery
-│   ├── environment/        # Atmosphere status gauges (CH4, CO, Particulates)
-│   ├── shell/              # Header state indicators, UTC clock, and scrolling sys log
-│   └── ui/                 # Reusable layout bezels and radial gauge meters
-├── lib/
-│   └── telemetry/
-│       ├── schema.ts       # Unified TelemetryFrame typescript schema and commands
-│       ├── mapper.ts       # ESP32 mapper integration entry-point
-│       ├── use-telemetry.ts# React hook managing WebSocket connections and backoff
-│       └── mock-server/    # Standalone ws mock server simulating real-world runs
-├── public/
-│   └── models/
-│       └── robot.glb       # Placeholder 3D model asset (replace with actual robot GLB)
-├── tokens.css              # Custom OKLCH palette, font sizes, and layout spacing tokens
-└── package.json            # Scripts and dependencies
-```
+The dashboard uses a common telemetry interface, allowing mock data to be replaced with real ESP32 telemetry without requiring changes to individual UI components, provided the incoming data is mapped to the expected schema.
 
----
+### 1. Configure the WebSocket Connection
 
-## 3. Hardware Integration Guide (ESP32 / Real UGV Bus)
-
-The entire application is architected around a single dynamic telemetry bus. Swapping the mock data server for the real ESP32 system does not require modifying any UI components.
-
-Follow these steps to wire up the hardware console:
-
-### Step A: Configure the WebSocket URL
-Create a `.env.local` file in the root directory (or set the system environment variables) and point the telemetry hook to the IP address or host of your ESP32's WebSocket server:
+Create a `.env.local` file in the project root:
 
 ```env
-# Point to your ESP32 WebSocket server (e.g., if ESP32 runs at 192.168.1.50:80)
 NEXT_PUBLIC_TELEMETRY_WS_URL=ws://192.168.1.50:80
 ```
 
-### Step B: Map ESP32 Payload to TelemetryFrame
-If your ESP32 emits JSON with keys differing from the default `TelemetryFrame` schema (defined in [`lib/telemetry/schema.ts`](./lib/telemetry/schema.ts)), you only need to update the mapper function in [`lib/telemetry/mapper.ts`](./lib/telemetry/mapper.ts).
+Replace the example IP address and port with those of your WebSocket server.
 
-For example, if the ESP32 sends a compact object like `{ seq: 101, bat: 84.5, methane: 0.05 }`, configure it in `mapper.ts`:
+Restart the Next.js development server after changing environment variables.
 
-```typescript
-// lib/telemetry/mapper.ts
-import type { TelemetryFrame } from "./schema";
+**Note:** The ESP32 WebSocket server must be reachable from the browser running the dashboard. For production deployments, use an appropriately secured connection and configure the network accordingly.
 
-export function mapInboundPayload(raw: any): TelemetryFrame {
-  // 1. Build a valid TelemetryFrame object using default values for missing data
-  return {
-    seq: raw.seq ?? 0,
-    receivedAt: new Date().toISOString(),
-    mission: {
-      id: "DELTA-4",
-      phase: "survey",
-      robotOnline: true,
-      elapsedSec: raw.elapsed ?? 0,
-      distanceM: raw.dist ?? 0,
-      tunnelProgressPct: raw.progress ?? 0,
-      sector: "SECTOR-S7",
-    },
-    link: {
-      quality: "online",
-      batteryPct: raw.bat ?? 100,
-      signalPct: raw.sig ?? 100,
-      snrDbm: raw.snr ?? -50,
-      nodesDropped: 0,
-      nodesTotal: 10,
-    },
-    power: {
-      mainPct: raw.bat ?? 100,
-      voltageV: raw.v ?? 24.0,
-      currentA: raw.a ?? 1.5,
-      batteryHealthPct: 98,
-    },
-    thermal: {
-      mainboard: { currentC: raw.temp ?? 35, minC: 30, maxC: 60, avgC: 35 },
-      ambientC: raw.ambient ?? 25,
-      humidityPct: raw.hum ?? 50,
-    },
-    gas: {
-      coPpm: raw.co ?? 0,
-      coStats: { currentC: raw.co ?? 0, minC: 0, maxC: 10, avgC: raw.co ?? 0 },
-      ch4Ppm: raw.methane ?? 0,
-      ch4Warn: (raw.methane ?? 0) >= 5,
-      ch4Crit: (raw.methane ?? 0) >= 10,
-      ch4WarnThresholdPpm: 5,
-      ch4ExplThresholdPpm: 10,
-    },
-    air: { pm1: raw.pm1 ?? 0, pm25: raw.pm25 ?? 0, pm10: raw.pm10 ?? 0 },
-    water: raw.water_detected ? "wet" : "dry",
-    lidar: { leftM: raw.lidar_l ?? 2.0, rightM: raw.lidar_r ?? 2.0 },
-    motion: { speedMps: raw.speed ?? 0, speedMaxMps: 2.0 },
-    control: {
-      mode: raw.mode === 1 ? "walk" : "drive",
-      tiltRollPct: raw.tilt ?? 50,
-      heightPct: raw.height ?? 50,
-      speed: "med",
-      lights: "med",
-      vision: "rgb",
-      driveDir: "stop",
-      walkDir: "stop",
-      gimbal: { pitch: 0, yaw: 0 },
-    },
-    cameras: {
-      rgb: { recording: true, fps: 30, resolution: "1080p", streamUrl: raw.video_url ?? "" },
-      thermal: { recording: false, fps: 24, resolution: "720p", streamUrl: "" },
-    },
-    log: [],
-    alerts: [],
-  };
+### 2. Map ESP32 Telemetry
+
+The expected telemetry structure is defined in:
+
+`lib/telemetry/schema.ts`
+
+The incoming payload transformation is handled by:
+
+`lib/telemetry/mapper.ts`
+
+For example, an ESP32 may send a compact JSON object:
+
+```json
+{
+  "seq": 101,
+  "bat": 84.5,
+  "methane": 0.05,
+  "co": 2.1,
+  "temp": 35
 }
 ```
 
-### Step C: Outbound Commands Format (Dashboard → ESP32)
-When an operator interacts with console controls (modes, lighting presets, directional keys, notes), the React client transmits commands over the WebSocket connection wrapped in a command envelope:
+The mapper converts these fields into the application's unified telemetry structure.
+
+Example:
+
+```typescript
+import type { TelemetryFrame } from "./schema";
+
+export function mapInboundPayload(raw: any): TelemetryFrame {
+  return {
+    // Map incoming hardware values to the
+    // complete TelemetryFrame structure.
+    // Supply appropriate defaults and status fields.
+  } as TelemetryFrame;
+}
+```
+
+This is a structural illustration, not a complete drop-in implementation. Populate every required field according to the actual `TelemetryFrame` definition.
+
+### 3. Send Commands to the Robot
+
+Commands from the dashboard are transmitted over WebSockets using a command envelope.
+
+Example lighting command:
 
 ```json
 {
@@ -165,7 +199,9 @@ When an operator interacts with console controls (modes, lighting presets, direc
 }
 ```
 
-Your ESP32 firmware should parse this JSON payload, trigger the hardware actuators, and respond back immediately with an acknowledgment (`ack`) package using the same `commandId` to confirm the action took effect:
+The ESP32 firmware should validate the command, execute the requested operation when safe, and return an acknowledgment.
+
+Example acknowledgment:
 
 ```json
 {
@@ -176,75 +212,223 @@ Your ESP32 firmware should parse this JSON payload, trigger the hardware actuato
 }
 ```
 
-Detailed payloads and types are documented in the [WebSocket Wire Protocol Spec](docs/ws-protocol.md) and demonstrated in the [ESP32 Reference Sketch](docs/esp32-reference/firmware.ino).
+The `commandId` links the acknowledgment to the original command.
 
----
+Refer to `docs/ws-protocol.md` and `docs/esp32-reference/firmware.ino` for the corresponding protocol and firmware implementation.
 
-## 4. Console Verification & Testing Instructions
+## Telemetry and Control Testing
 
-To test and verify the Phase 2 bidirectional link features locally, run the Next.js console alongside the stateful mock server:
+### 1. Movement Controls
 
-### A. Testing Pointer-Held Controls
-- Navigate to the **Robot Control** panel.
-- Click and hold Fwd/Back/Left/Right on the **Drive Control** or **Walk Control** D-Pads.
-- Observe the telemetry terminal output (or command logs). The dashboard will continuously dispatch throttled movement packages (every 200ms) while held down.
-- Release the mouse/pointer or drag the cursor out of the button boundaries: verify that an explicit `"stop"` command is immediately dispatched.
+- Open the Robot Control panel.
+- Press and hold the directional controls.
+- Verify that movement commands are sent at the configured interval.
+- Release the control and confirm that a stop command is transmitted.
+- Test both drive and walk modes if supported by the robot.
 
-### B. Testing Slider Throttling
-- Click and drag the **Posture** (Tilt/Roll or Height) sliders.
-- The UI handles the drag smoothly in local state and throttles outgoing WebSocket frames to a 150ms interval to prevent buffer overflow on the hardware side.
-- Upon release, the final precise coordinate is immediately sent over the wire.
+### 2. Slider Controls
 
-### C. Testing Emergency Stop (E-STOP)
-- The E-STOP safety control is located inside the **Safety System** module on the left side (always visible regardless of the current active view).
-- Click **EMERGENCY STOP**:
-  - The E-STOP command immediately bypasses the normal command queue and sends the `{ type: "estop" }` command.
-  - Telemetry speed variables immediately drop to `0.00 M/S` and walk/drive D-pads display a locked, halted state.
-- Press **RESET E-STOP** to re-enable operations.
+- Adjust the posture sliders.
+- Confirm that outgoing updates are throttled during movement.
+- Release the slider and verify that the final value is transmitted.
 
-### D. Testing Connection Lifecycles & Stale Link Indicators
-- Terminate the mock server terminal (`Ctrl+C`). 
-- Watch the **UTC Status Lamp** in the top header: it will transition to `Connecting` and then `Offline`. All controls are automatically disabled to prevent dead commands.
-- Restart the mock server: the link will automatically reconnect with backoff.
-- The heartbeat sends pings every 3s. If the mock server stops replying but the socket remains open, the status lamp transitions to a flashing `Stale Link` warning after 8s.
+The described configuration uses a 150 ms transmission interval during slider movement.
 
-### E. Testing Optimistic UI & Rejection Paths
-- The mock server is configured to simulate random packet transmission failures ~3% of the time.
-- To trigger a deterministic failure: navigate to **Operator Note**, type `"fail"` or `"reject"` (e.g., `"fail sensor scan"`), and click **Stamp Log**.
-- The mock server will return `ok: false` with a simulated error.
-- Verify that the Bezel header displays a flashing `WAITING FOR ACK ⚠️` or `UNCONFIRMED ⚠️` warning frame, demonstrating the reconciliation handler.
+### 3. Emergency Stop
 
----
+- Locate the Emergency Stop control in the Safety System module.
+- Activate it and verify that the robot receives the stop command.
+- Confirm that the interface indicates a halted state.
+- Reset the emergency stop only after verifying that it is safe to resume operation.
 
-## 5. Phase 3: Real Gas Sensor Data (MQ-4 Methane & MQ-7 CO)
+**Safety note:** A dashboard-side emergency stop is not a substitute for an independent hardware safety circuit. Actual robot stopping behavior must be verified on the physical system.
 
-Phase 3 implements the first live sensor-to-dashboard pipeline using physical MQ-4 (CH4) and MQ-7 (CO) analog resistive gas sensors connected directly to the ESP32.
+### 4. Connection and Reconnection
 
-### A. Hardware Wiring & Voltage Divider Specification
-- **Power Supply:** Connect VCC to ESP32 +5V (VIN) or external 5V regulated power supply (5V required for internal heaters). Connect GND to common ground.
-- **ADC Pin Selection (ADC1 Safe):**
-  - **MQ-4 (Methane CH4):** Connect to **GPIO32** (ADC1 Channel 4).
-  - **MQ-7 (Carbon Monoxide CO):** Connect to **GPIO34** (ADC1 Channel 6).
-  - *Do NOT use ADC2 pins (GPIO 0, 2, 4, 12-15, 25-27) as Wi-Fi operations disable ADC2!*
-- **Voltage Divider Circuit:**
-  ```text
-  Sensor Analog Out (0V - 5V) ----[ 10k Ω ]----+---- ESP32 ADC Pin (0V - 3.3V Max)
-                                               |
-                                           [ 20k Ω ]
-                                               |
-                                              GND
-  ```
-  - Ratio: $V_{\text{ADC}} = V_{\text{sensor}} \times \frac{20\text{k}}{10\text{k} + 20\text{k}} = V_{\text{sensor}} \times \frac{2}{3}$
-  - Multiplier: $V_{\text{sensor}} = V_{\text{ADC}} \times 1.5$
+- Stop the mock telemetry server.
+- Observe the connection status in the dashboard.
+- Confirm that unavailable connections disable normal control commands.
+- Restart the server and verify automatic reconnection.
+- Check stale-link detection when telemetry stops arriving.
 
-### B. Boot Warm-Up & Clean-Air Calibration State Machine
-1. **WARMING_UP State (0–30s):** Sensors heat up to operational temperature. Telemetry frames broadcast `coStatus: "warming_up"` and `ch4Status: "warming_up"`. Dashboard displays amber `WARMING UP` badges and dims numeric values.
-2. **CALIBRATING State (30–45s):** Automatically averages clean-air sensor resistance readings over 15 seconds to compute baseline $R_0$ values for MQ-4 and MQ-7. Telemetry frames broadcast `coStatus: "calibrating"` and `ch4Status: "calibrating"`. Dashboard displays cyan `CALIBRATING R0` badges.
-3. **SENSOR_OK State (>45s):** Live exponential curve regressions calculate exact gas concentration in PPM ($PPM = a \cdot (R_s / R_0)^b$). Telemetry frames broadcast `coStatus: "ok"` and `ch4Status: "ok"`. Dashboard updates values live.
+The example configuration sends heartbeats every 3 seconds and marks the connection stale after approximately 8 seconds without a valid heartbeat.
 
-### C. 5-Step Verification Checklist
-1. **Serial-level Sanity Check:** Flash [`docs/esp32-reference/firmware.ino`](docs/esp32-reference/firmware.ino) to ESP32. Open Arduino Serial Monitor at 115200 baud. Confirm raw ADC mV, computed $R_s$, and PPM logs print every second. Expose MQ-4 to gas stimulus (e.g. unlit lighter in ventilated area) and observe PPM spike.
-2. **Warm-Up Behavior Check:** Reset ESP32 and observe status transition sequence in Serial Monitor: `warming_up` (30s) $\rightarrow$ `calibrating` (15s) $\rightarrow$ `ok` (baselines $R_0$ logged).
-3. **Wire-Level Check:** Open Chrome DevTools $\rightarrow$ Network $\rightarrow$ WS $\rightarrow$ Messages tab while connected to ESP32. Verify incoming telemetry JSON frames contain `"coPpm"`, `"ch4Ppm"`, `"coStatus"`, and `"ch4Status"`.
-4. **Dashboard UI Check:** View Atmosphere panel in Dashboard. Confirm `WARMING UP` / `CALIBRATING R0` badges display during initial boot and transition cleanly to live numbers labeled `(approx)`.
-5. **Stimulus-Response Check:** Perform gas stimulus test near MQ-4 while watching live Dashboard UI. Confirm Atmosphere panel row and Analytics view Methane line-chart update in real time.
+### 5. Command Acknowledgment and Failure Handling
+
+- Open the Operator Note panel.
+- Enter a test message such as `fail sensor scan` or `reject command`.
+- Submit the note.
+- Verify that the mock server returns a simulated rejection.
+- Confirm that the interface displays an appropriate failure or unconfirmed status.
+
+The mock server may also simulate occasional transmission failures to test error handling.
+
+## Gas Sensor Integration
+
+The dashboard supports telemetry from MQ-4 methane and MQ-7 carbon monoxide sensors connected to an ESP32.
+
+### 1. Hardware Connections
+
+| Component | ESP32 Connection |
+|---|---|
+| MQ-4 analog output | GPIO32 (ADC1) |
+| MQ-7 analog output | GPIO34 (ADC1) |
+| Sensor power | Appropriate regulated supply |
+| Ground | Common ground |
+
+MQ-series sensors use internal heaters and commonly require a 5 V supply. Their analog outputs must be conditioned to remain within the ESP32's permitted ADC input voltage.
+
+#### Voltage Divider
+
+For an output that can reach 5 V, a 10 kΩ upper resistor and a 20 kΩ lower resistor provide the following relationship:
+
+```text
+Sensor Analog Out
+       |
+    [10 kΩ]
+       |
+       +---------- ESP32 ADC Input
+       |
+    [20 kΩ]
+       |
+      GND
+```
+
+The ADC voltage is:
+
+\[
+V_{\mathrm{ADC}} =
+V_{\mathrm{sensor}}\times\frac{20}{10+20}
+\]
+
+Therefore:
+
+\[
+V_{\mathrm{sensor}}=1.5V_{\mathrm{ADC}}
+\]
+
+Verify the sensor module's actual output range and the ESP32 board's ADC limits before connecting the circuit.
+
+### 2. Sensor Initialization States
+
+The example firmware uses three sensor initialization states:
+
+| State | Example Duration | Description |
+|---|---|---|
+| `warming_up` | 0–30 seconds | Initial sensor warm-up |
+| `calibrating` | 30–45 seconds | Baseline measurement |
+| `ok` | After 45 seconds | Sensor data available |
+
+These timings are configurable examples, not guaranteed stabilization times. MQ sensors may require substantially longer initial conditioning and warm-up, depending on the sensor, manufacturer, operating conditions, and calibration procedure.
+
+During calibration, the firmware estimates baseline resistance values under appropriate reference conditions. The dashboard displays the current sensor state so operators can distinguish initialization from active measurements.
+
+### 3. Gas Concentration Calculation
+
+Gas concentration can be estimated using a calibrated relationship of the form:
+
+\[
+PPM=a\left(\frac{R_s}{R_0}\right)^b
+\]
+
+Where:
+
+- \(PPM\) is the estimated gas concentration in parts per million.
+- \(R_s\) is the current sensor resistance.
+- \(R_0\) is the reference resistance established during calibration.
+- \(a\) and \(b\) are calibration-dependent constants.
+
+The constants must be derived from appropriate sensor calibration data. Raw ADC readings or generic curve coefficients should not be treated as accurate gas concentration measurements.
+
+### 4. Verification Procedure
+
+1. Upload the ESP32 firmware from `docs/esp32-reference/firmware.ino`.
+2. Open the Arduino Serial Monitor at 115200 baud.
+3. Verify that raw ADC readings, sensor resistance, and status messages are reported.
+4. Observe the initialization and calibration state transitions.
+5. Inspect WebSocket messages in the browser's developer tools.
+6. Confirm that telemetry frames include `coPpm`, `ch4Ppm`, `coStatus`, and `ch4Status`.
+7. Open the Atmosphere panel and verify that sensor readings and status indicators update.
+8. Confirm that the Analytics view reflects incoming methane measurements.
+
+Use appropriate calibration equipment and safe test procedures. Do not release flammable gas or use an open flame to test sensors in an underground or potentially hazardous environment.
+
+## Environmental Monitoring
+
+The environmental monitoring interface can display:
+
+- Methane concentration (CH₄)
+- Carbon monoxide concentration (CO)
+- Particulate matter (PM1, PM2.5, and PM10)
+- Ambient temperature
+- Humidity
+- Water detection status
+
+Thresholds should be configurable according to the application, sensor specifications, applicable safety standards, and site requirements.
+
+**Important:** MQ-series sensors are suitable for prototyping and indicative monitoring, but they should not be treated as certified mine-safety instruments without appropriate certification, calibration, validation, and system-level assessment.
+
+## Configuration and Troubleshooting
+
+### Dashboard Does Not Connect
+
+- Verify that the WebSocket server is running.
+- Check the configured `NEXT_PUBLIC_TELEMETRY_WS_URL`.
+- Confirm that the browser can reach the ESP32 over the network.
+- Inspect browser developer tools for WebSocket connection errors.
+- Check firewall rules and network configuration.
+
+### Sensor Readings Are Incorrect
+
+- Verify the sensor wiring and supply voltage.
+- Confirm that the ADC input voltage is within permitted limits.
+- Check the voltage-divider configuration.
+- Allow appropriate sensor conditioning and warm-up time.
+- Validate the calibration coefficients against reference measurements.
+
+### Commands Are Not Executed
+
+- Confirm that the WebSocket connection is active.
+- Inspect outgoing command messages.
+- Verify the command type and payload against the protocol specification.
+- Check firmware-side validation and acknowledgment handling.
+- Confirm that hardware interlocks permit the requested action.
+
+### 3D Model Is Missing
+
+Verify that the robot model exists at:
+
+`public/models/robot.glb`
+
+Replace the placeholder model with a compatible GLB asset if necessary.
+
+## Security and Safety Considerations
+
+- Validate incoming telemetry and command payloads.
+- Authenticate and authorize remote control clients.
+- Use secure WebSocket connections where supported by the deployment architecture.
+- Restrict access to robot-control interfaces.
+- Implement command timeouts and safe defaults.
+- Provide an independent hardware emergency-stop mechanism.
+- Validate all environmental measurements before using them for safety-critical decisions.
+- Test control behavior in a controlled environment before operating the physical robot.
+
+## Future Improvements
+
+Potential enhancements include:
+
+- Integration with additional sensors and robot platforms.
+- Improved 3D tunnel mapping and localization.
+- Historical telemetry storage and mission replay.
+- Configurable alert thresholds and notification workflows.
+- Advanced diagnostics and predictive maintenance.
+- Authentication, role-based access, and audit logging.
+- Integration with validated environmental monitoring systems.
+
+## License
+
+Add the appropriate license for your project before distributing or reusing the source code.
+
+## Contributing
+
+Contributions, bug reports, and feature suggestions are welcome. Please document changes to the telemetry schema, WebSocket protocol, and hardware integration so that the dashboard and firmware remain compatible.
