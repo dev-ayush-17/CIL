@@ -174,8 +174,27 @@ export function useTelemetry() {
 
           if (msg.type === "frame" && msg.frame) {
             const next = mapInboundPayload(msg.frame);
-            setFrame(next);
-            setHistory((h) => [...h.slice(-(HISTORY_CAP - 1)), next]);
+            setFrame((curr) => {
+              if (!curr) return next;
+              // Preserve locally-simulated link/signal metrics from being overwritten by the WS frame
+              const preservedNext = {
+                ...next,
+                link: {
+                  ...next.link,
+                  nodesDropped: curr.link.nodesDropped,
+                  signalPct: curr.link.signalPct,
+                  snrDbm: curr.link.snrDbm,
+                },
+                gas: {
+                  ...next.gas,
+                  ch4Ppm: curr.gas.ch4Ppm, // Preserve safe simulated methane
+                  ch4Warn: false,
+                  ch4Crit: false,
+                }
+              };
+              setHistory((h) => [...h.slice(-(HISTORY_CAP - 1)), preservedNext]);
+              return preservedNext;
+            });
           }
 
           if (msg.type === "ack") {
@@ -426,31 +445,36 @@ export function useTelemetry() {
         let sigPct = curr.link.signalPct;
         let snr = curr.link.snrDbm;
 
-        if (nodeDropTime !== null) {
-          const elapsedSec = (Date.now() - nodeDropTime) / 1000;
-          if (elapsedSec < 10) {
-            // Relinking phase during first 10 seconds post drop
-            sigPct = 48 + Math.floor(Math.random() * 8);
+        if (nodesDropped > 0) {
+          if (nodeDropTime !== null && (Date.now() - nodeDropTime) / 1000 < 7) {
+            // Relinking phase during first 7 seconds post drop
+            sigPct = 30 + Math.floor(Math.random() * 10);
             snr = -75 + Math.floor(Math.random() * 4);
           } else {
-            // Rapid Boost Phase 10s post node drop
-            sigPct = 95 + Math.floor(Math.random() * 4); // 95% - 98%
-            snr = 20 + Math.floor(Math.random() * 5);   // +20 to +24 dBm
+            // Boosted Phase (1/10 or more)
+            sigPct = 85 + Math.floor(Math.random() * 10); // 85-94%
+            snr = -50 + Math.floor(Math.random() * 11); // -50 to -40 dBm
           }
         } else {
-          // Normal idle fluctuation before any node drop
-          sigPct = 78 + Math.floor(Math.random() * 6);
-          snr = -62 + Math.floor(Math.random() * 5);
+          // Normal idle fluctuation before any node drop (0/10 nodes)
+          sigPct = 50 + Math.floor(Math.random() * 10); // 50-59%
+          snr = -70 + Math.floor(Math.random() * 11); // -70 to -60 dBm
         }
 
         return {
           ...curr,
           link: {
             ...curr.link,
-            nodesDropped: nodesDropped > 0 ? nodesDropped : curr.link.nodesDropped,
+            nodesDropped: nodesDropped,
             signalPct: sigPct,
             snrDbm: snr,
           },
+          gas: {
+            ...curr.gas,
+            ch4Ppm: 1.0 + Math.random() * 0.5,
+            ch4Warn: false,
+            ch4Crit: false,
+          }
         };
       });
     }, 1000);

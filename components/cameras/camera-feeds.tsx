@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Bezel } from "@/components/ui/bezel";
 import { useTelemetryContext } from "@/lib/telemetry/telemetry-context";
 import type { CameraMeta } from "@/lib/telemetry/schema";
+import infraredImg from "./infrared.jpeg";
 
 export function CameraFeeds() {
   const { frame } = useTelemetryContext();
@@ -42,7 +43,7 @@ function FeedSlot({
   active: boolean;
   streamUrl: string;
 }) {
-  const [camIp, setCamIp] = useState<string>("10.232.110.215");
+  const [camIp, setCamIp] = useState<string>("esp32cam.local");
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [wsFps, setWsFps] = useState<number>(0);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -60,7 +61,7 @@ function FeedSlot({
     const candidateUrls = [
       `ws://${camIp}:8765/ws`,
       `ws://${camIp}:8765`,
-      "ws://10.232.110.215:8765/ws",
+      "ws://esp3cam.local:8765/ws",
       "ws://192.168.4.1:8765/ws",
     ];
     let urlIdx = 0;
@@ -144,6 +145,8 @@ function FeedSlot({
           />
         ) : mode === "rgb" && isWsConnected && blobUrl ? (
           <img className="h-full w-full object-cover" src={blobUrl} alt="ESP32-CAM WS Feed" />
+        ) : mode === "thermal" ? (
+          <img className="h-full w-full object-cover" src={infraredImg.src} alt="Thermal Camera Feed" />
         ) : (
           <MockTunnel mode={mode} fps={wsFps || meta?.fps || 24} />
         )}
@@ -169,7 +172,7 @@ function FeedSlot({
               className="w-24 bg-slate-900 text-cyan-300 font-mono text-[10px] px-1 rounded border border-slate-600 focus:outline-none focus:border-cyan-400"
               value={camIp}
               onChange={(e) => setCamIp(e.target.value)}
-              placeholder="10.232.110.215"
+              placeholder="esp3cam.local"
             />
           </div>
         )}
